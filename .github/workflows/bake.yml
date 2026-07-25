@@ -3,7 +3,9 @@
 #   plan ─→ regions (37-way) ─→ cutlines ─→ warp (37-way) ─→ tile (bands) ─→ verify
 #                                                        └──→ overview ──────┘
 #
-# regions:  fetch sheet, derive its data region        (per-sheet artifact)
+# fetch:    zips into an actions/cache keyed by cycle — FAA is contacted
+#           once per cycle EVER; all other jobs restore the cache
+# regions:  extract sheet, derive its data region      (per-sheet artifact)
 # cutlines: merge regions, cross-sheet hole gate, emit cutline2 polygons
 # warp:     fetch sheet again (51 MB, seconds), cutline-cropped warp at
 #           the @3x z12 grid, stage tif to R2 scratch/<run_id>/
@@ -47,9 +49,27 @@ jobs:
           echo "sheets=$(grep -vE '^\s*(#|$)' charts.txt | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
           echo "bands=$(python3 scripts/bands.py)" >> "$GITHUB_OUTPUT"
 
+  # Download every sheet's zip ONCE per cycle into an actions/cache keyed
+  # by the cycle (FAA zips are immutable within a cycle). Every other job
+  # restores this cache; FAA is never polled twice for the same data.
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        id: zips
+        with:
+          path: data/zips
+          key: faa-src-${{ inputs.cycle }}
+      - if: steps.zips.outputs.cache-hit != 'true'
+        run: |
+          for c in $(grep -vE '^\s*(#|$)' charts.txt); do
+            bash scripts/ci-fetch.sh "$c" "${{ inputs.cycle }}"
+          done
+
   regions:
     if: ${{ inputs.stages == 'all' }}
-    needs: plan
+    needs: [plan, fetch]
     runs-on: ubuntu-latest
     container: ghcr.io/osgeo/gdal:ubuntu-full-latest
     defaults: { run: { shell: bash } }
@@ -58,7 +78,11 @@ jobs:
         sheet: ${{ fromJSON(needs.plan.outputs.sheets) }}
     steps:
       - uses: actions/checkout@v7
-      - name: Fetch and derive
+      - uses: actions/cache/restore@v6
+        with:
+          path: data/zips
+          key: faa-src-${{ inputs.cycle }}
+      - name: Extract and derive
         run: |
           ln -s "$PWD" /repo
           bash scripts/ci-fetch.sh "${{ matrix.sheet }}" "${{ inputs.cycle }}"
@@ -106,7 +130,11 @@ jobs:
         with:
           name: cutlines
           path: data/conus/src/
-      - name: Fetch, warp, stage
+      - uses: actions/cache/restore@v6
+        with:
+          path: data/zips
+          key: faa-src-${{ inputs.cycle }}
+      - name: Extract, warp, stage
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -166,12 +194,17 @@ jobs:
   # exactly that and blew a 1-hour timeout. No needs: runs in parallel
   # with everything and is dispatchable alone (stages=overview).
   overview:
+    needs: fetch
     runs-on: ubuntu-latest
     container: ghcr.io/osgeo/gdal:ubuntu-full-latest
     defaults: { run: { shell: bash } }
     steps:
       - uses: actions/checkout@v7
-      - name: Fetch, derive, low-res warp, tile z0-7
+      - uses: actions/cache/restore@v6
+        with:
+          path: data/zips
+          key: faa-src-${{ inputs.cycle }}
+      - name: Extract, derive, low-res warp, tile z0-7
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
