@@ -27,6 +27,9 @@ on:
       prefix:
         description: Release prefix under /vfr/ (MUST be new)
         default: 07-09-2026c-ci
+      stages:
+        description: all, or overview (z0-7 only, self-contained)
+        default: all
 
 env:
   BUCKET: wingover-charts
@@ -45,6 +48,7 @@ jobs:
           echo "bands=$(python3 scripts/bands.py)" >> "$GITHUB_OUTPUT"
 
   regions:
+    if: ${{ inputs.stages == 'all' }}
     needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -159,32 +163,45 @@ jobs:
             --content-type image/jxl --cache-control "public, max-age=31536000, immutable" \
             tiles3x/ "s3://$BUCKET/vfr/${{ inputs.prefix }}/3x/"
 
+  # Self-contained on purpose: z0-7 needs only ~10x-decimated imagery, so
+  # warping the ORIGINAL scans at the z7 grid (with the same detected
+  # cutlines, re-derived here in seconds per sheet) beats streaming 100GB
+  # of full-res scratch warps through /vsis3/ — the v1 of this job did
+  # exactly that and blew a 1-hour timeout. No needs: runs in parallel
+  # with everything and is dispatchable alone (stages=overview).
   overview:
-    needs: warp
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     container: ghcr.io/osgeo/gdal:ubuntu-full-latest
     defaults: { run: { shell: bash } }
     steps:
       - uses: actions/checkout@v7
-      - name: Tile z0-7 from downsampled mosaic
+      - name: Fetch, derive, low-res warp, tile z0-7
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_VIRTUAL_HOSTING: "FALSE"
         run: |
-          export AWS_S3_ENDPOINT="$(echo "${{ secrets.R2_ENDPOINT }}" | sed 's|https://||')"
-          grep -vE '^\s*(#|$)' charts.txt | \
-            sed "s|^|/vsis3/$BUCKET/scratch/${{ github.run_id }}/warped/|;s|\$|.tif|" > list.txt
-          gdalbuildvrt -input_file_list list.txt conus.vrt
-          # z7@3x ground resolution; the whole CONUS mosaic is ~13k px wide
-          gdalwarp -q -tr 407.664150854 407.664150854 -r average \
-            -co COMPRESS=DEFLATE conus.vrt small.tif
+          ln -s "$PWD" /repo
+          CHARTS=$(grep -vE '^\s*(#|$)' charts.txt)
+          for c in $CHARTS; do bash scripts/ci-fetch.sh "$c" "${{ inputs.cycle }}"; done
+          python3 scripts/derive.py
+          python3 scripts/finalize.py
+          cd data/conus
+          mkdir -p lowres
+          # z7@3x ground resolution — the whole CONUS mosaic is ~13k px wide
+          for c in $CHARTS; do
+            tif=$(ls "src/$c"/*.tif | head -1)
+            gdal_translate -q -of vrt -expand rgb "$tif" "src/$c/rgb.vrt"
+            gdalwarp -q -t_srs EPSG:3857 -tr 407.664150854 407.664150854 \
+              -r average -dstalpha -cutline "src/$c/cutline2.geojson" -crop_to_cutline \
+              "src/$c/rgb.vrt" "lowres/$c.tif"
+          done
+          gdalbuildvrt conus-low.vrt lowres/*.tif
           gdal raster tile -f JPEGXL \
             --creation-option LOSSLESS=NO --creation-option DISTANCE=4 --creation-option EFFORT=7 \
             --tile-size 768 --min-zoom 0 --max-zoom 7 --convention xyz \
             --resampling cubic --overview-resampling average \
-            --skip-blank --webviewer none small.tif tiles3x
+            --skip-blank --webviewer none conus-low.vrt tiles3x
           echo "overview: $(find tiles3x -name '*.jxl' | wc -l) tiles"
           command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
           aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 sync --only-show-errors \
