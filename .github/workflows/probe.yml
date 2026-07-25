@@ -23,7 +23,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Toolchain and disk baseline
         run: |
@@ -65,7 +65,7 @@ jobs:
           find data/conus/tiles3x -name '*.jxl' -exec stat -c%s {} + | awk '{s+=$1;n++} END {printf "avg tile: %d bytes over %d\n", s/n, n}'
 
       - name: Upload z10 sample tiles
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: sample-tiles-${{ inputs.chart }}
           path: data/conus/tiles3x/10/

@@ -38,7 +38,7 @@ jobs:
       sheets: ${{ steps.emit.outputs.sheets }}
       bands: ${{ steps.emit.outputs.bands }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - id: emit
         run: |
           echo "sheets=$(grep -vE '^\s*(#|$)' charts.txt | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
@@ -54,14 +54,14 @@ jobs:
       matrix:
         sheet: ${{ fromJSON(needs.plan.outputs.sheets) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Fetch and derive
         run: |
           ln -s "$PWD" /repo
           bash scripts/ci-fetch.sh "${{ matrix.sheet }}" "${{ inputs.cycle }}"
           echo "${{ matrix.sheet }}" > charts.txt
           python3 scripts/derive.py
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: regions-${{ matrix.sheet }}
           path: data/conus/dataregions.json
@@ -73,8 +73,8 @@ jobs:
     container: ghcr.io/osgeo/gdal:ubuntu-full-latest
     defaults: { run: { shell: bash } }
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v5
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: regions-*
           path: regions/
@@ -85,7 +85,7 @@ jobs:
           python3 scripts/merge.py regions/
           grep -vE '^\s*(#|$)' charts.txt | xargs -I{} mkdir -p data/conus/src/{}
           python3 scripts/finalize.py
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: cutlines
           path: data/conus/src/*/cutline2.geojson
@@ -100,8 +100,8 @@ jobs:
       matrix:
         sheet: ${{ fromJSON(needs.plan.outputs.sheets) }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v5
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: cutlines
           path: data/conus/src/
@@ -135,7 +135,7 @@ jobs:
       matrix:
         band: ${{ fromJSON(needs.plan.outputs.bands) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Tile band z8-12 and ship
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -166,7 +166,7 @@ jobs:
     container: ghcr.io/osgeo/gdal:ubuntu-full-latest
     defaults: { run: { shell: bash } }
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Tile z0-7 from downsampled mosaic
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
