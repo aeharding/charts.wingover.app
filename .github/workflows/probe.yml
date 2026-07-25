@@ -1,0 +1,68 @@
+# Single-sheet end-to-end probe on a hosted runner: fetch → derive →
+# finalize → warp → tile. Measures the numbers the sharded production
+# workflow needs (wall time per stage, disk, tile counts) before we
+# commit to the matrix design. Manual trigger only.
+name: probe
+on:
+  workflow_dispatch:
+    inputs:
+      chart:
+        description: Sheet to bake
+        default: Brownsville
+      cycle:
+        description: FAA cycle (MM-DD-YYYY)
+        default: 07-09-2026
+
+jobs:
+  bake-one:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container: ghcr.io/osgeo/gdal:ubuntu-full-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain and disk baseline
+        run: |
+          gdalinfo --version
+          python3 -c "from osgeo import gdal; import numpy; print('numpy', numpy.__version__); print('JPEGXL driver:', gdal.GetDriverByName('JPEGXL') is not None)"
+          df -h /
+          nproc
+
+      - name: Fetch sheet
+        run: |
+          mkdir -p data/conus/src/"${{ inputs.chart }}"
+          python3 - <<'EOF'
+          import urllib.request, zipfile, io, os
+          chart = "${{ inputs.chart }}"; cycle = "${{ inputs.cycle }}"
+          url = f"https://aeronav.faa.gov/visual/{cycle}/sectional-files/{chart}.zip"
+          req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+          data = urllib.request.urlopen(req, timeout=120).read()
+          zipfile.ZipFile(io.BytesIO(data)).extractall(f"data/conus/src/{chart}")
+          print(f"fetched {len(data)>>20} MB")
+          EOF
+          ls -la data/conus/src/"${{ inputs.chart }}"
+
+      - name: Derive and finalize cutline
+        run: |
+          echo "${{ inputs.chart }}" > charts.txt
+          ln -s "$PWD" /repo
+          time python3 scripts/derive.py
+          time python3 scripts/finalize.py
+
+      - name: Warp and tile
+        run: |
+          time bash scripts/bake.sh
+          df -h /
+
+      - name: Report
+        run: |
+          echo "tiles: $(find data/conus/tiles3x -name '*.jxl' | wc -l)"
+          du -sh data/conus/src data/conus/warped data/conus/tiles3x
+          find data/conus/tiles3x -name '*.jxl' -exec stat -c%s {} + | awk '{s+=$1;n++} END {printf "avg tile: %d bytes over %d\n", s/n, n}'
+
+      - name: Upload z10 sample tiles
+        uses: actions/upload-artifact@v4
+        with:
+          name: sample-tiles-${{ inputs.chart }}
+          path: data/conus/tiles3x/10/
+          retention-days: 7
