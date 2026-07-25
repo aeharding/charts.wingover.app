@@ -172,6 +172,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_VIRTUAL_HOSTING: "FALSE"
+          GDAL_NUM_THREADS: ALL_CPUS
           # Retries for the brief /vsis3/ header reads below; the bulk
           # pixel data is localized first, precisely because one flaky
           # ranged read 80 minutes into a streamed encode killed a band.
@@ -243,6 +244,7 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          GDAL_NUM_THREADS: ALL_CPUS
         run: |
           ln -s "$PWD" /repo
           CHARTS=$(grep -vE '^\s*(#|$)' charts.txt)

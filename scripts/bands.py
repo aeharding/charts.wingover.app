@@ -8,7 +8,7 @@ import math
 TILE0 = 20037508.342789244
 Z8 = 2 * TILE0 / 256  # z8 tile width in meters
 WEST, EAST = -126.6, -60.6  # full lon range of the charts.txt set
-COLS_PER_BAND = 6
+COLS_PER_BAND = 3
 
 def col(lon):
     return (lon + 180.0) / 360.0 * 256

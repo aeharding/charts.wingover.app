@@ -1,9 +1,12 @@
-# Finalize v2 cutlines: smooth per-column detection jitter (rolling
-# median, window 5 - preserves real steps, kills one-off notches), emit
-# MultiPolygon slab cutlines (densified), and gate on the FIXED hole
-# checker: a cell is a hole if uncovered AND enclosed by coverage along
-# either axis (catches band gaps of any length, the old checker's blind
-# spot).
+# Finalize cutlines: hole-gate the union coverage and emit densified
+# MultiPolygon cutlines per sheet.
+#
+# Deliberately thin. derive.py snaps every region edge to the printed
+# neatline at pixel precision (~140 m) and median-smooths per column, so
+# regions contain no collar ink and overlapping sheets carry identical
+# map imagery — no cross-sheet arbitration is needed and mosaic order
+# cannot matter. (Three generations of cell-granular arbitration died
+# here; see derive.py's neatline-snap comment for the artifact history.)
 import json
 
 import numpy as np
@@ -15,56 +18,22 @@ regions = json.load(open(DATA))
 W0, S0, E0, N0 = -127, 23, -60, 50
 GW = round((E0 - W0) / CELL)
 GH = round((N0 - S0) / CELL)
-grid = np.zeros((GH, GW), bool)  # [row from south][col from west]
 
-smoothed = {}
+# Coverage grid for the hole gate: a cell counts as covered when a
+# region overlaps most of it (0.5 cell margin), so pixel-snapped edges
+# that sit mid-cell don't read as holes.
+grid = np.zeros((GH, GW), bool)
 for chart, polys in regions.items():
-    # rebuild per-column spans from slabs
-    xs = sorted({p[0] for poly in polys for p in poly})
-    w = min(xs)
-    e = max(p[0] for poly in polys for p in poly)
-    cols = round((e - w) / CELL)
-    top = np.full(cols, np.nan)
-    bot = np.full(cols, np.nan)
     for poly in polys:
-        x0 = poly[0][0]; x1 = poly[1][0]
-        y0 = min(q[1] for q in poly); y1 = max(q[1] for q in poly)
-        c0 = round((x0 - w) / CELL); c1 = round((x1 - w) / CELL)
-        top[c0:c1] = y1
-        bot[c0:c1] = y0
-    # rolling median (window 5), NaN-aware
-    def med(a):
-        out = a.copy()
-        for i in range(len(a)):
-            win = a[max(0, i - 2) : i + 3]
-            win = win[~np.isnan(win)]
-            if len(win):
-                out[i] = np.median(win)
-        return out
-    top = med(top)
-    bot = med(bot)
-    # drop columns with <10min of data after smoothing
-    valid = ~np.isnan(top) & ~np.isnan(bot) & (top - bot > 2 * CELL)
-    # re-emit slabs
-    slabs = []
-    for ci in range(cols):
-        if not valid[ci]:
-            continue
-        span = (round(bot[ci] / CELL), round(top[ci] / CELL))
-        if slabs and slabs[-1][1] == ci and slabs[-1][2] == span:
-            slabs[-1] = (slabs[-1][0], ci + 1, span)
-        else:
-            slabs.append((ci, ci + 1, span))
-    polys2 = []
-    for c0, c1, (b, t) in slabs:
-        x0 = w + c0 * CELL
-        x1 = w + c1 * CELL
-        polys2.append((x0, b * CELL, x1, t * CELL))
-        # paint the union grid
-        gc0 = round((x0 - W0) / CELL); gc1 = round((x1 - W0) / CELL)
-        gr0 = round((b * CELL - S0) / CELL); gr1 = round((t * CELL - S0) / CELL)
-        grid[gr0:gr1, gc0:gc1] = True
-    smoothed[chart] = polys2
+        xs = [p[0] for p in poly]
+        ys = [p[1] for p in poly]
+        x0, x1 = min(xs), max(xs)
+        y0, y1 = min(ys), max(ys)
+        gc0 = int(np.ceil((x0 - W0) / CELL - 0.5))
+        gc1 = int(np.floor((x1 - W0) / CELL + 0.5))
+        gr0 = int(np.ceil((y0 - S0) / CELL - 0.5))
+        gr1 = int(np.floor((y1 - S0) / CELL + 0.5))
+        grid[max(gr0, 0) : min(gr1, GH), max(gc0, 0) : min(gc1, GW)] = True
 
 # hole check: uncovered cell enclosed along a row or a column
 cov_row = np.zeros_like(grid)
@@ -87,19 +56,19 @@ for y, x in zip(hy, hx):
 for k in sorted(clusters):
     print(f"  ~({k[0]:.0f},{k[1]:.0f}): {clusters[k]} cells")
 
-# emit cutline2 geojson (densified)
-def densify(x0, y0, x1, y1):
-    ring = [(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)]
+# emit cutline2 geojson (densified: gdalwarp rasterizes cutlines with
+# straight chords in source LCC space; undensified parallels sag)
+def densify(ring):
     out = []
     for (a, b), (c, d) in zip(ring, ring[1:]):
         seg = max(abs(c - a), abs(d - b))
         n = max(1, int(seg / 0.05))
         for i in range(n):
             out.append([a + (c - a) * i / n, b + (d - b) * i / n])
-    out.append([x0, y0])
+    out.append(list(ring[0]))
     return out
 
-for chart, polys in smoothed.items():
+for chart, polys in regions.items():
     fc = {
         "type": "FeatureCollection",
         "features": [{
@@ -107,9 +76,9 @@ for chart, polys in smoothed.items():
             "properties": {"chart": chart},
             "geometry": {
                 "type": "MultiPolygon",
-                "coordinates": [[densify(*p)] for p in polys],
+                "coordinates": [[densify([tuple(p) for p in poly])] for poly in polys],
             },
         }],
     }
     json.dump(fc, open(f"/repo/data/conus/src/{chart}/cutline2.geojson", "w"))
-print("wrote cutline2.geojson for", len(smoothed), "charts")
+print("wrote cutline2.geojson for", len(regions), "charts")
