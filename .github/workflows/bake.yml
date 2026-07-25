@@ -74,6 +74,7 @@ jobs:
     container: ghcr.io/osgeo/gdal:ubuntu-full-latest
     defaults: { run: { shell: bash } }
     strategy:
+      fail-fast: false
       matrix:
         sheet: ${{ fromJSON(needs.plan.outputs.sheets) }}
     steps:
@@ -122,6 +123,7 @@ jobs:
     container: ghcr.io/osgeo/gdal:ubuntu-full-latest
     defaults: { run: { shell: bash } }
     strategy:
+      fail-fast: false
       matrix:
         sheet: ${{ fromJSON(needs.plan.outputs.sheets) }}
     steps:
@@ -160,6 +162,7 @@ jobs:
     container: ghcr.io/osgeo/gdal:ubuntu-full-latest
     defaults: { run: { shell: bash } }
     strategy:
+      fail-fast: false
       matrix:
         band: ${{ fromJSON(needs.plan.outputs.bands) }}
     steps:
@@ -169,12 +172,44 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_VIRTUAL_HOSTING: "FALSE"
+          # Retries for the brief /vsis3/ header reads below; the bulk
+          # pixel data is localized first, precisely because one flaky
+          # ranged read 80 minutes into a streamed encode killed a band.
+          GDAL_HTTP_MAX_RETRY: "8"
+          GDAL_HTTP_RETRY_DELAY: "2"
+          BX0: ${{ matrix.band.x0 }}
+          BX1: ${{ matrix.band.x1 }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           export AWS_S3_ENDPOINT="$(echo "${{ secrets.R2_ENDPOINT }}" | sed 's|https://||')"
-          grep -vE '^\s*(#|$)' charts.txt | \
-            sed "s|^|/vsis3/$BUCKET/scratch/${{ github.run_id }}/warped/|;s|\$|.tif|" > list.txt
-          gdalbuildvrt -input_file_list list.txt \
-            -te ${{ matrix.band.x0 }} 2600000 ${{ matrix.band.x1 }} 6500000 band.vrt
+          command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
+          # Which sheets intersect this band? Header reads only.
+          python3 - > fetch.txt <<'EOF'
+          import os
+          from osgeo import gdal
+          gdal.UseExceptions()
+          x0, x1 = float(os.environ["BX0"]), float(os.environ["BX1"])
+          charts = [
+              line.strip()
+              for line in open("charts.txt")
+              if line.strip() and not line.startswith("#")
+          ]
+          for c in charts:
+              uri = f"/vsis3/{os.environ['BUCKET']}/scratch/{os.environ['RUN_ID']}/warped/{c}.tif"
+              cc = gdal.Info(uri, format="json")["cornerCoordinates"]
+              if cc["lowerRight"][0] > x0 and cc["upperLeft"][0] < x1:
+                  print(c)
+          EOF
+          echo "band sheets: $(tr '\n' ' ' < fetch.txt)"
+          # Localize the inputs: aws cp retries properly, and the encode
+          # then runs against local disk instead of a 90-minute HTTP stream.
+          mkdir -p warped
+          for c in $(cat fetch.txt); do
+            aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --quiet \
+              "s3://$BUCKET/scratch/$RUN_ID/warped/$c.tif" "warped/$c.tif"
+          done
+          gdalbuildvrt -te ${{ matrix.band.x0 }} 2600000 ${{ matrix.band.x1 }} 6500000 \
+            band.vrt warped/*.tif
           gdal raster tile -f JPEGXL \
             --creation-option LOSSLESS=NO --creation-option DISTANCE=4 --creation-option EFFORT=7 \
             --tile-size 768 --min-zoom 8 --max-zoom 12 --convention xyz \
