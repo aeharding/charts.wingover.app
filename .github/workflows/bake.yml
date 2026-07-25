@@ -79,6 +79,11 @@ jobs:
         sheet: ${{ fromJSON(needs.plan.outputs.sheets) }}
     steps:
       - uses: actions/checkout@v7
+      # actions/cache keys the cache VERSION by compression tool: the
+      # plain-runner fetch job saves with zstd, so the container must
+      # have zstd too or every restore silently misses and refetches
+      # from FAA (observed: 76 misses in run 30145552524).
+      - run: command -v zstd >/dev/null || { apt-get update -qq && apt-get install -y -qq zstd; } >/dev/null
       - uses: actions/cache/restore@v6
         with:
           path: data/zips
@@ -132,6 +137,11 @@ jobs:
         with:
           name: cutlines
           path: data/conus/src/
+      # actions/cache keys the cache VERSION by compression tool: the
+      # plain-runner fetch job saves with zstd, so the container must
+      # have zstd too or every restore silently misses and refetches
+      # from FAA (observed: 76 misses in run 30145552524).
+      - run: command -v zstd >/dev/null || { apt-get update -qq && apt-get install -y -qq zstd; } >/dev/null
       - uses: actions/cache/restore@v6
         with:
           path: data/zips
@@ -236,6 +246,11 @@ jobs:
     defaults: { run: { shell: bash } }
     steps:
       - uses: actions/checkout@v7
+      # actions/cache keys the cache VERSION by compression tool: the
+      # plain-runner fetch job saves with zstd, so the container must
+      # have zstd too or every restore silently misses and refetches
+      # from FAA (observed: 76 misses in run 30145552524).
+      - run: command -v zstd >/dev/null || { apt-get update -qq && apt-get install -y -qq zstd; } >/dev/null
       - uses: actions/cache/restore@v6
         with:
           path: data/zips
