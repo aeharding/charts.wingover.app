@@ -1,0 +1,41 @@
+# CONUS sectional sheets, one per line — the COMPLETE current FAA set
+# (37; Houlton was retired, its area is on Halifax/Montreal). Verify
+# against https://aeronav.faa.gov/visual/<cycle>/sectional-files/ when
+# bumping cycles: a sheet missing here is a silent hole in the map.
+Albuquerque
+Atlanta
+Billings
+Brownsville
+Charlotte
+Cheyenne
+Chicago
+Cincinnati
+Dallas-Ft_Worth
+Denver
+Detroit
+El_Paso
+Great_Falls
+Green_Bay
+Halifax
+Houston
+Jacksonville
+Kansas_City
+Klamath_Falls
+Lake_Huron
+Las_Vegas
+Los_Angeles
+Memphis
+Miami
+Montreal
+New_Orleans
+New_York
+Omaha
+Phoenix
+Salt_Lake_City
+San_Antonio
+San_Francisco
+Seattle
+St_Louis
+Twin_Cities
+Washington
+Wichita
