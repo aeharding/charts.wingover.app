@@ -1,0 +1,221 @@
+# Full CONUS bake, sharded across hosted runners:
+#
+#   plan ─→ regions (37-way) ─→ cutlines ─→ warp (37-way) ─→ tile (bands) ─→ verify
+#                                                        └──→ overview ──────┘
+#
+# regions:  fetch sheet, derive its data region        (per-sheet artifact)
+# cutlines: merge regions, cross-sheet hole gate, emit cutline2 polygons
+# warp:     fetch sheet again (51 MB, seconds), cutline-cropped warp at
+#           the @3x z12 grid, stage tif to R2 scratch/<run_id>/
+# tile:     z8-12 per z8-aligned longitude band, VRT over /vsis3/ scratch,
+#           sync straight to the immutable release prefix
+# overview: z0-7 from a downsampled whole-CONUS warp of the same VRT
+# verify:   R2 object count + the sentinel tiles that v2 shipped missing
+#           (Corpus Christi, Montreal, Houlton, Yellowstone), then drop
+#           the scratch prefix.
+#
+# The release prefix is NEVER an existing one: tiles are cached immutable
+# at the edge and in clients; every bake ships to a fresh prefix and the
+# app flips when verified.
+name: bake
+on:
+  workflow_dispatch:
+    inputs:
+      cycle:
+        description: FAA cycle (MM-DD-YYYY)
+        default: 07-09-2026
+      prefix:
+        description: Release prefix under /vfr/ (MUST be new)
+        default: 07-09-2026c-ci
+
+env:
+  BUCKET: wingover-charts
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      sheets: ${{ steps.emit.outputs.sheets }}
+      bands: ${{ steps.emit.outputs.bands }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: emit
+        run: |
+          echo "sheets=$(grep -vE '^\s*(#|$)' charts.txt | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+          echo "bands=$(python3 scripts/bands.py)" >> "$GITHUB_OUTPUT"
+
+  regions:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: ghcr.io/osgeo/gdal:ubuntu-full-latest
+    defaults: { run: { shell: bash } }
+    strategy:
+      matrix:
+        sheet: ${{ fromJSON(needs.plan.outputs.sheets) }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Fetch and derive
+        run: |
+          ln -s "$PWD" /repo
+          bash scripts/ci-fetch.sh "${{ matrix.sheet }}" "${{ inputs.cycle }}"
+          echo "${{ matrix.sheet }}" > charts.txt
+          python3 scripts/derive.py
+      - uses: actions/upload-artifact@v5
+        with:
+          name: regions-${{ matrix.sheet }}
+          path: data/conus/dataregions.json
+
+  cutlines:
+    needs: regions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: ghcr.io/osgeo/gdal:ubuntu-full-latest
+    defaults: { run: { shell: bash } }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: regions-*
+          path: regions/
+      - name: Merge and finalize
+        run: |
+          ln -s "$PWD" /repo
+          mkdir -p data/conus
+          python3 scripts/merge.py regions/
+          grep -vE '^\s*(#|$)' charts.txt | xargs -I{} mkdir -p data/conus/src/{}
+          python3 scripts/finalize.py
+      - uses: actions/upload-artifact@v5
+        with:
+          name: cutlines
+          path: data/conus/src/*/cutline2.geojson
+
+  warp:
+    needs: [plan, cutlines]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container: ghcr.io/osgeo/gdal:ubuntu-full-latest
+    defaults: { run: { shell: bash } }
+    strategy:
+      matrix:
+        sheet: ${{ fromJSON(needs.plan.outputs.sheets) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: cutlines
+          path: data/conus/src/
+      - name: Fetch, warp, stage
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          ln -s "$PWD" /repo
+          bash scripts/ci-fetch.sh "${{ matrix.sheet }}" "${{ inputs.cycle }}"
+          cd data/conus
+          c="${{ matrix.sheet }}"
+          tif=$(ls "src/$c"/*.tif | head -1)
+          gdal_translate -q -of vrt -expand rgb "$tif" "src/$c/rgb.vrt"
+          gdalwarp -q -t_srs EPSG:3857 \
+            -tr 12.7395047141960 12.7395047141960 \
+            -r cubic -dstalpha -cutline "src/$c/cutline2.geojson" -crop_to_cutline \
+            -co COMPRESS=DEFLATE -co TILED=YES -co BIGTIFF=IF_SAFER \
+            -multi -wo NUM_THREADS=3 "src/$c/rgb.vrt" "$c.tif"
+          command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --quiet \
+            "$c.tif" "s3://$BUCKET/scratch/${{ github.run_id }}/warped/$c.tif"
+
+  tile:
+    needs: [plan, warp]
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    container: ghcr.io/osgeo/gdal:ubuntu-full-latest
+    defaults: { run: { shell: bash } }
+    strategy:
+      matrix:
+        band: ${{ fromJSON(needs.plan.outputs.bands) }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Tile band z8-12 and ship
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_VIRTUAL_HOSTING: "FALSE"
+        run: |
+          export AWS_S3_ENDPOINT="$(echo "${{ secrets.R2_ENDPOINT }}" | sed 's|https://||')"
+          grep -vE '^\s*(#|$)' charts.txt | \
+            sed "s|^|/vsis3/$BUCKET/scratch/${{ github.run_id }}/warped/|;s|\$|.tif|" > list.txt
+          gdalbuildvrt -input_file_list list.txt \
+            -te ${{ matrix.band.x0 }} 2600000 ${{ matrix.band.x1 }} 6500000 band.vrt
+          gdal raster tile -f JPEGXL \
+            --creation-option LOSSLESS=NO --creation-option DISTANCE=4 --creation-option EFFORT=7 \
+            --tile-size 768 --min-zoom 8 --max-zoom 12 --convention xyz \
+            --resampling cubic --overview-resampling average \
+            --skip-blank --webviewer none band.vrt tiles3x
+          echo "band ${{ matrix.band.name }}: $(find tiles3x -name '*.jxl' | wc -l) tiles"
+          command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
+          aws configure set default.s3.max_concurrent_requests 6
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 sync --only-show-errors \
+            --content-type image/jxl --cache-control "public, max-age=31536000, immutable" \
+            tiles3x/ "s3://$BUCKET/vfr/${{ inputs.prefix }}/3x/"
+
+  overview:
+    needs: warp
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container: ghcr.io/osgeo/gdal:ubuntu-full-latest
+    defaults: { run: { shell: bash } }
+    steps:
+      - uses: actions/checkout@v5
+      - name: Tile z0-7 from downsampled mosaic
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_VIRTUAL_HOSTING: "FALSE"
+        run: |
+          export AWS_S3_ENDPOINT="$(echo "${{ secrets.R2_ENDPOINT }}" | sed 's|https://||')"
+          grep -vE '^\s*(#|$)' charts.txt | \
+            sed "s|^|/vsis3/$BUCKET/scratch/${{ github.run_id }}/warped/|;s|\$|.tif|" > list.txt
+          gdalbuildvrt -input_file_list list.txt conus.vrt
+          # z7@3x ground resolution; the whole CONUS mosaic is ~13k px wide
+          gdalwarp -q -tr 407.664150854 407.664150854 -r average \
+            -co COMPRESS=DEFLATE conus.vrt small.tif
+          gdal raster tile -f JPEGXL \
+            --creation-option LOSSLESS=NO --creation-option DISTANCE=4 --creation-option EFFORT=7 \
+            --tile-size 768 --min-zoom 0 --max-zoom 7 --convention xyz \
+            --resampling cubic --overview-resampling average \
+            --skip-blank --webviewer none small.tif tiles3x
+          echo "overview: $(find tiles3x -name '*.jxl' | wc -l) tiles"
+          command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 sync --only-show-errors \
+            --content-type image/jxl --cache-control "public, max-age=31536000, immutable" \
+            tiles3x/ "s3://$BUCKET/vfr/${{ inputs.prefix }}/3x/"
+
+  verify:
+    needs: [tile, overview]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Count and sentinel tiles
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          total=$(aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 ls --recursive \
+            "s3://$BUCKET/vfr/${{ inputs.prefix }}/3x/" | wc -l)
+          echo "shipped tiles: $total"
+          [ "$total" -gt 200000 ] || { echo "suspiciously few tiles" >&2; exit 1; }
+          # The v2 regressions, plus the v1 Yellowstone hole: all must exist.
+          for t in 10/234/429 10/302/366 10/319/363 11/420/742; do
+            aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3api head-object \
+              --bucket "$BUCKET" --key "vfr/${{ inputs.prefix }}/3x/$t.jxl" >/dev/null \
+              && echo "sentinel OK: $t" || { echo "MISSING sentinel: $t" >&2; exit 1; }
+          done
+      - name: Drop scratch
+        if: always()
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 rm --recursive --only-show-errors \
+            "s3://$BUCKET/scratch/${{ github.run_id }}/" || true
