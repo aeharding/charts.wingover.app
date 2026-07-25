@@ -51,7 +51,6 @@ jobs:
     if: ${{ inputs.stages == 'all' }}
     needs: plan
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     container: ghcr.io/osgeo/gdal:ubuntu-full-latest
     defaults: { run: { shell: bash } }
     strategy:
@@ -73,7 +72,6 @@ jobs:
   cutlines:
     needs: regions
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     container: ghcr.io/osgeo/gdal:ubuntu-full-latest
     defaults: { run: { shell: bash } }
     steps:
@@ -97,7 +95,6 @@ jobs:
   warp:
     needs: [plan, cutlines]
     runs-on: ubuntu-latest
-    timeout-minutes: 45
     container: ghcr.io/osgeo/gdal:ubuntu-full-latest
     defaults: { run: { shell: bash } }
     strategy:
@@ -132,7 +129,6 @@ jobs:
   tile:
     needs: [plan, warp]
     runs-on: ubuntu-latest
-    timeout-minutes: 300
     container: ghcr.io/osgeo/gdal:ubuntu-full-latest
     defaults: { run: { shell: bash } }
     strategy:
@@ -171,7 +167,6 @@ jobs:
   # with everything and is dispatchable alone (stages=overview).
   overview:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
     container: ghcr.io/osgeo/gdal:ubuntu-full-latest
     defaults: { run: { shell: bash } }
     steps:
@@ -211,7 +206,6 @@ jobs:
   verify:
     needs: [tile, overview]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     steps:
       - name: Count and sentinel tiles
         env:
