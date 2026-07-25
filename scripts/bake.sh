@@ -29,8 +29,8 @@ echo "$CHARTS" | xargs -P 4 -I{} bash -c '
     -tr 12.7395047141960 12.7395047141960 \
     -r cubic -dstalpha -cutline "src/$c/cutline2.geojson" -crop_to_cutline \
     -co COMPRESS=DEFLATE -co TILED=YES -co BIGTIFF=IF_SAFER \
-    -multi -wo NUM_THREADS=3 "src/$c/rgb.vrt" "$out.tmp.tif"
-  mv "$out.tmp.tif" "$out"
+    -multi -wo NUM_THREADS=3 "src/$c/rgb.vrt" "$out.part"
+  mv "$out.part" "$out"
   echo "warped $c"
 '
 
