@@ -4,13 +4,15 @@
 # chop boxes) is the exit criterion for stitch work.
 import json
 import math
+import os
 import sys
 
 import numpy as np
 from osgeo import gdal
 
 gdal.UseExceptions()
-ds = gdal.Open("/repo/data/conus/preview/conus.vrt")
+REGION = os.environ.get("REGION", "conus")
+ds = gdal.Open(f"/repo/data/{REGION}/preview/conus.vrt")
 gt = ds.GetGeoTransform()
 W, H = ds.RasterXSize, ds.RasterYSize
 
@@ -20,14 +22,17 @@ def to_lon(px):
 def to_lat(py):
     return math.degrees(math.atan(math.sinh((gt[3] - py * gt[1]) / 6378137)))
 
-# Known intentional chops (from insets.json detection results; padded).
-CHOPS = [
-    (-122.3, 31.8, -119.9, 33.7),
-    (-87.2, 28.2, -85.7, 29.8),
-    (-84.9, 28.1, -83.6, 29.4),
-    (-79.9, 30.8, -78.3, 32.4),
-    (-73.2, 36.6, -71.7, 37.9),
-]
+# Intentional chops for THIS region, read from what derive actually
+# produced — the old hardcoded CONUS box list was both stale and wrong
+# for every other region.
+CHOPS = []
+_dr = f"/repo/data/{REGION}/dataregions.json"
+if os.path.exists(_dr):
+    for _r in json.load(open(_dr)).values():
+        for _q in _r.get("insets", []):
+            xs = [p[0] for p in _q]
+            ys = [p[1] for p in _q]
+            CHOPS.append((min(xs) - 0.1, min(ys) - 0.1, max(xs) + 0.1, max(ys) + 0.1))
 
 def in_chop(lon, lat):
     return any(w <= lon <= e and s <= lat <= n for w, s, e, n in CHOPS)

@@ -5,8 +5,9 @@
 # at /repo — see README.md. Idempotent: finished warps are kept, so a
 # crashed run resumes where it stopped.
 set -euo pipefail
-cd /repo/data/conus
-CHARTS=$(grep -vE '^\s*(#|$)' /repo/charts.txt)
+REGION="${REGION:-conus}"
+mkdir -p "/repo/data/$REGION" && cd "/repo/data/$REGION"
+CHARTS=$(grep -vE '^\s*(#|$)' "/repo/charts-$REGION.txt")
 
 # Every listed chart must have a cutline (finalize.py output) BEFORE any
 # work starts — a stale or missing cutline must never silently warp old
