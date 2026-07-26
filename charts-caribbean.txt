@@ -1,0 +1,3 @@
+# Separate FAA product line (visual/<cycle>/Caribbean/), not sectional-files. Puerto Rico + Virgin Islands + Lesser Antilles at 1:1M.
+Caribbean_1_VFR
+Caribbean_2_VFR

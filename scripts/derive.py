@@ -7,20 +7,31 @@
 import json
 import os
 import re
+import sys
 
 import numpy as np
 from osgeo import gdal
 
 gdal.UseExceptions()
-SRC = "/repo/data/conus/src"
+# Region registry (regions.json): each region has its own chart list and
+# hole-gate grid, but all sheets share one source pool — a sheet belongs
+# to exactly one region, and its cutline lives beside its scan.
+REGION = os.environ.get("REGION", "conus")
+SRC = "/repo/data/src"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import units  # noqa: E402
 RES = 0.00125        # warp grid (deg/px) — fine enough that thin contour
                      # lines survive nearest sampling (sparse desert charts
                      # have no other texture)
 CELL = 1 / 12        # detection cell (5 minutes)
+RETREAT_DEG = 4 * 0.00125  # edge pullback applied per slab in finalize
 PX = round(CELL / RES)  # px per cell edge
 
-def fgdc_bbox(d):
-    htm = [f for f in os.listdir(d) if f.lower().endswith(".htm")][0]
+def fgdc_bbox(d, tif_path=None):
+    # a multi-file sheet has one .htm per scan, matched by stem
+    stem = os.path.splitext(os.path.basename(tif_path))[0] if tif_path else None
+    htms = [f for f in os.listdir(d) if f.lower().endswith(".htm")]
+    htm = next((h for h in htms if os.path.splitext(h)[0] == stem), htms[0])
     raw = open(os.path.join(d, htm), "rb").read()
     for enc in ("utf-8", "utf-16", "latin-1"):
         try:
@@ -39,15 +50,15 @@ def snap(v, up):
     return (np.ceil(v / CELL) if up else np.floor(v / CELL)) / (1 / CELL) if abs(k * CELL - v) > 1e-9 else v
 
 def detect(chart):
-    d = os.path.join(SRC, chart)
-    w, s, e, n = fgdc_bbox(d)
+    tif_path, _, _ = units.unit_paths(chart)
+    d = os.path.dirname(tif_path)
+    w, s, e, n = fgdc_bbox(d, tif_path)
     # snap scan window outward to the cell grid
     w = np.floor(w / CELL) * CELL
     s = np.floor(s / CELL) * CELL
     e = np.ceil(e / CELL) * CELL
     n = np.ceil(n / CELL) * CELL
-    tif = [f for f in os.listdir(d) if f.lower().endswith(".tif")][0]
-    rgb = gdal.Translate("", os.path.join(d, tif), format="VRT", rgbExpand="rgb")
+    rgb = gdal.Translate("", tif_path, format="VRT", rgbExpand="rgb")
     mem = gdal.Warp(
         "", rgb, format="MEM", dstSRS="EPSG:4326", dstAlpha=True,
         outputBounds=(w, s, e, n), xRes=RES, yRes=RES, resampleAlg="near",
@@ -173,12 +184,27 @@ def detect(chart):
     # finds every one on every sheet, this edition and the next.
     # White-dominant diagram boxes (Eglin) carry no ink component and
     # stay in insets.json.
-    olabel = np.full((rows, cols), -1, int)
+    # FINE detection grid (half-cell): an inset's printed white margin
+    # is thinner than a 5-minute cell — at 60N a cell is only ~4.6 km
+    # wide — so at coarse resolution the box never separates from the
+    # surrounding ocean and stays invisible to component analysis.
+    # Alaska's ocean insets need this; CONUS insets are large enough
+    # that both resolutions find them.
+    F = 2
+    PXF = PX // F
+    rowsF, colsF = rows * F, cols * F
+    rf = a[0][: rowsF * PXF, : colsF * PXF].reshape(rowsF, PXF, colsF, PXF)
+    gf = a[1][: rowsF * PXF, : colsF * PXF].reshape(rowsF, PXF, colsF, PXF)
+    bf = a[2][: rowsF * PXF, : colsF * PXF].reshape(rowsF, PXF, colsF, PXF)
+    af = a[3][: rowsF * PXF, : colsF * PXF].reshape(rowsF, PXF, colsF, PXF)
+    whiteF = ((rf > 242) & (gf > 242) & (bf > 242)).mean(axis=(1, 3))
+    strictF = ((af > 0).mean(axis=(1, 3)) > 0.9) & (whiteF < 0.5)
+    olabel = np.full((rowsF, colsF), -1, int)
     comps = []
     cur = 0
-    for ri in range(rows):
-        for ci in range(cols):
-            if strict_orig[ri, ci] and olabel[ri, ci] < 0:
+    for ri in range(rowsF):
+        for ci in range(colsF):
+            if strictF[ri, ci] and olabel[ri, ci] < 0:
                 stack = [(ri, ci)]
                 olabel[ri, ci] = cur
                 cells = []
@@ -188,9 +214,9 @@ def detect(chart):
                     for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                         yy, xx = y + dy, x + dx
                         if (
-                            0 <= yy < rows
-                            and 0 <= xx < cols
-                            and strict_orig[yy, xx]
+                            0 <= yy < rowsF
+                            and 0 <= xx < colsF
+                            and strictF[yy, xx]
                             and olabel[yy, xx] < 0
                         ):
                             olabel[yy, xx] = cur
@@ -200,18 +226,23 @@ def detect(chart):
     auto_insets = []
     if comps:
         main = max(range(len(comps)), key=lambda i: len(comps[i]))
-        main_mask = np.zeros((rows, cols), bool)
+        main_mask = np.zeros((rowsF, colsF), bool)
         for y, x in comps[main]:
             main_mask[y, x] = True
+        # Dilation radius in CELLS. A 5-minute cell is ~9 km tall but
+        # only ~4.6 km wide at 60N, so 2 cells swallowed the thin white
+        # margin around Alaska's ocean insets and read them as part of
+        # the map. One cell still separates overedge strips (touching
+        # the body across a 1-cell ruler) from framed boxes.
         dilated_main = main_mask.copy()
-        for _ in range(2):
+        for _ in range(int(os.environ.get("BODY_DILATE", "1"))):
             g = dilated_main.copy()
             dilated_main[1:] |= g[:-1]
             dilated_main[:-1] |= g[1:]
             dilated_main[:, 1:] |= g[:, :-1]
             dilated_main[:, :-1] |= g[:, 1:]
         for i, cells in enumerate(comps):
-            if i == main or len(cells) < 3:
+            if i == main or len(cells) < 3 * F * F:
                 continue
             rs = [c[0] for c in cells]
             cs = [c[1] for c in cells]
@@ -221,7 +252,7 @@ def detect(chart):
             # they are narrow, edge-anchored and extreme-aspect — never
             # chop those, they are real map.
             hw, hh = c1 - c0, r1 - r0
-            if hw > 30 or hh > 30 or hw < 2 or hh < 2:
+            if hw > 30 * F or hh > 30 * F or hw < 2 * F or hh < 2 * F:
                 continue
             # Overedge strips (real map beyond a Joins-ruler) are tall
             # and narrow; addenda and margin artwork are compact blocks.
@@ -236,22 +267,78 @@ def detect(chart):
                 continue
             # must sit INSIDE the sheet's data body (a legend swatch at
             # the sheet edge is already outside the cutline)
-            mid_c = (c0 + c1) // 2
+            mid_c = (c0 + c1) // (2 * F)
             t, b = spans[mid_c] if mid_c < len(spans) else (0, 0)
-            if not (t <= (r0 + r1) // 2 < b):
+            if not (t * F <= (r0 + r1) // 2 < b * F):
                 continue
             # absorb the surrounding white margin so no halo ships
-            while r0 > 0 and white[r0 - 1, c0:c1].mean() > 0.6:
+            while r0 > 0 and whiteF[r0 - 1, c0:c1].mean() > 0.6:
                 r0 -= 1
-            while r1 < rows and white[r1, c0:c1].mean() > 0.6:
+            while r1 < rowsF and whiteF[r1, c0:c1].mean() > 0.6:
                 r1 += 1
-            while c0 > 0 and white[r0:r1, c0 - 1].mean() > 0.6:
+            while c0 > 0 and whiteF[r0:r1, c0 - 1].mean() > 0.6:
                 c0 -= 1
-            while c1 < cols and white[r0:r1, c1].mean() > 0.6:
+            while c1 < colsF and whiteF[r0:r1, c1].mean() > 0.6:
                 c1 += 1
+            CF = CELL / F
             auto_insets.append(
-                (w + c0 * CELL, n - r1 * CELL, w + c1 * CELL, n - r0 * CELL)
+                (w + c0 * CF, n - r1 * CF, w + c1 * CF, n - r0 * CF)
             )
+    # WHITE-DOMINANT BOXES. Insets whose interior is pale — Alaska's
+    # Russian/Canadian-side boxes, printed in grey and light blue, and
+    # rule diagrams like Eglin — form NO ink component: they are HOLES
+    # inside the map body, which the per-column span-fill then paints
+    # back in. Find enclosed non-map regions and keep the ones that are
+    # rectangular (a printed frame) — real white map features (salt
+    # flats, playas) are irregular and stay.
+    hole_mask = ~strictF
+    for ci in range(colsF):
+        t, b = spans[ci // F] if ci // F < len(spans) else (0, 0)
+        hole_mask[: t * F, ci] = False
+        hole_mask[b * F :, ci] = False
+    hlabel = np.full((rowsF, colsF), -1, int)
+    hcur = 0
+    for ri in range(rowsF):
+        for ci in range(colsF):
+            if hole_mask[ri, ci] and hlabel[ri, ci] < 0:
+                stack = [(ri, ci)]
+                hlabel[ri, ci] = hcur
+                cells = []
+                touches_edge = False
+                while stack:
+                    y, x = stack.pop()
+                    cells.append((y, x))
+                    if y in (0, rowsF - 1) or x in (0, colsF - 1):
+                        touches_edge = True
+                    for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        yy, xx = y + dy, x + dx
+                        if (
+                            0 <= yy < rowsF
+                            and 0 <= xx < colsF
+                            and hole_mask[yy, xx]
+                            and hlabel[yy, xx] < 0
+                        ):
+                            hlabel[yy, xx] = hcur
+                            stack.append((yy, xx))
+                hcur += 1
+                if touches_edge or len(cells) < 4 * F * F:
+                    continue
+                rs = [c[0] for c in cells]
+                cs = [c[1] for c in cells]
+                r0, r1, c0, c1 = min(rs), max(rs) + 1, min(cs), max(cs) + 1
+                hw, hh = c1 - c0, r1 - r0
+                if hw > 40 * F or hh > 40 * F:
+                    continue
+                if max(hw, hh) > 5 * min(hw, hh):
+                    continue
+                # rectangular = printed frame; irregular = real terrain
+                if len(cells) < 0.85 * hw * hh:
+                    continue
+                CF = CELL / F
+                auto_insets.append(
+                    (w + c0 * CF, n - r1 * CF, w + c1 * CF, n - r0 * CF)
+                )
+
     # merge overlapping/adjacent boxes (one addendum can split into
     # several ink components)
     merged = []
@@ -331,7 +418,7 @@ def detect(chart):
     # the neighbor's overedge overlap instead of painting over its map
     # as a hairline. ~50 m of printed margin lost at true rims —
     # invisible.
-    RETREAT = 4
+    RETREAT = 4  # px; applied in finalize (see RETREAT_DEG)
     # SUSTAINED ink only: a single solid stroke must not stop the scan —
     # the sheet frame is outer-border-line, then a mostly-white graticule
     # tick strip with degree labels, then the neatline; stopping at the
@@ -362,8 +449,12 @@ def detect(chart):
             if run == RUN:
                 bot_px = rr + RUN
                 break
-        ftop[ci] = n - (top_px + RETREAT) * RES
-        fbot[ci] = n - (bot_px - RETREAT) * RES
+        # RAW edges: the retreat is applied later, per slab, and ONLY
+        # where a neighbour covers the strip. Retreating here produced
+        # ~1 km empty hairlines wherever two sheets merely ABUT (the
+        # 44N New York/Halifax joint by Matinicus).
+        ftop[ci] = n - top_px * RES
+        fbot[ci] = n - bot_px * RES
     # smooth per-column jitter (rolling median, window 5): neatlines are
     # constant-latitude, so the median flattens pixel noise and keeps
     # real steps (Denver's Grand Canyon corner).
@@ -506,9 +597,8 @@ def detect_inset(chart, seed_lon, seed_lat):
     is returned."""
     from osgeo import osr
 
-    d = os.path.join(SRC, chart)
-    tif = [f for f in os.listdir(d) if f.lower().endswith(".tif")][0]
-    src = gdal.Open(os.path.join(d, tif))
+    tif_path, _, _ = units.unit_paths(chart)
+    src = gdal.Open(tif_path)
     rgb = gdal.Translate("", src, format="VRT", rgbExpand="rgb")
     gt = src.GetGeoTransform()
     inv = gdal.InvGeoTransform(gt)
@@ -791,7 +881,7 @@ def detect_inset(chart, seed_lon, seed_lat):
         "re-seed insets.json for this edition"
     )
 
-INSETS_PATH = os.path.join(os.path.dirname(SRC), "..", "..", "insets.json")
+INSETS_PATH = "/repo/insets.json"
 INSETS = json.load(open(INSETS_PATH)) if os.path.exists(INSETS_PATH) else []
 
 def source_rect_quad(chart, box, pad=0.01):
@@ -799,9 +889,8 @@ def source_rect_quad(chart, box, pad=0.01):
     as a lon/lat quad (5 points, closed)."""
     from osgeo import osr
 
-    d = os.path.join(SRC, chart)
-    tif = [f for f in os.listdir(d) if f.lower().endswith(".tif")][0]
-    src = gdal.Open(os.path.join(d, tif))
+    tif_path, _, _ = units.unit_paths(chart)
+    src = gdal.Open(tif_path)
     srs = src.GetSpatialRef()
     wgs = osr.SpatialReference()
     wgs.ImportFromEPSG(4326)
@@ -855,10 +944,144 @@ def source_rect_quad(chart, box, pad=0.01):
     return [[ring.GetX(i), ring.GetY(i)] for i in range(ring.GetPointCount())]
 
 
+def detect_frames(chart):
+    """Find printed inset FRAMES: axis-aligned dark rectangles in the
+    sheet's own pixel space.
+
+    The last resort of the three detectors. Alaska's Russian- and
+    Canadian-side insets are pale enough to classify as map and are
+    separated from the surrounding ocean by nothing but a thin printed
+    frame, so neither the ink-component nor the white-hole detector can
+    see them. Frames ARE axis-aligned in source space (tilted in
+    lon/lat), so scan there: candidate rules are rows/columns carrying a
+    long solid dark run; a box is a pair of each whose four sides hold
+    up under a line follower.
+    """
+    from osgeo import osr
+
+    tif_path, _, _ = units.unit_paths(chart)
+    src = gdal.Open(tif_path)
+    W0, H0 = src.RasterXSize, src.RasterYSize
+    D = 4
+    dw, dh = W0 // D, H0 // D
+    rgb = gdal.Translate("", src, format="VRT", rgbExpand="rgb")
+    a = rgb.ReadAsArray(0, 0, W0, H0, buf_xsize=dw, buf_ysize=dh)
+    dark = np.minimum(np.minimum(a[0], a[1]), a[2]) < 150
+
+    def longest_run(v):
+        best = cur = 0
+        for x in v:
+            cur = cur + 1 if x else 0
+            best = max(best, cur)
+        return best
+
+    MINSIDE = int(0.05 * dw)  # frames are at least ~5% of sheet width
+    MAXSIDE = int(0.55 * dw)
+    rows_c, cols_c = [], []
+    for r in range(dh):
+        if longest_run(dark[r]) > MINSIDE:
+            rows_c.append(r)
+    for c in range(dw):
+        if longest_run(dark[:, c]) > MINSIDE:
+            cols_c.append(c)
+
+    def thin(idx):
+        out = []
+        for i in idx:
+            if not out or i - out[-1] > 8:
+                out.append(i)
+        return out
+
+    rows_c, cols_c = thin(rows_c), thin(cols_c)
+
+    def solid_h(r, c0, c1):
+        seg = dark[max(r - 2, 0) : r + 3, c0:c1]
+        return seg.any(axis=0).mean() > 0.95
+
+    def solid_v(c, r0, r1):
+        seg = dark[r0:r1, max(c - 2, 0) : c + 3]
+        return seg.any(axis=1).mean() > 0.95
+
+    # Corner-anchored search. The naive form (every row pair x every
+    # column pair) is O(R^2*C^2) — hundreds of millions of numpy slices
+    # on a dense sheet, which ran for HOURS before being killed. A real
+    # frame's verticals BEGIN at its top rule, so only columns with a
+    # line starting at rt can be its sides; that test is cheap and
+    # almost always empty, collapsing the search to near-linear.
+    import time
+
+    BUDGET = float(os.environ.get("FRAME_BUDGET_S", "20"))
+    t0 = time.time()
+    boxes = []
+    for rt in rows_c:
+        if time.time() - t0 > BUDGET:
+            print(
+                f"  WARN {chart}: frame scan hit the {BUDGET:.0f}s budget "
+                f"({len(rows_c)}x{len(cols_c)} candidates); boxes so far kept",
+                flush=True,
+            )
+            break
+        starts = [
+            c
+            for c in cols_c
+            if solid_v(c, rt + 2, min(rt + MINSIDE, dh - 1))
+        ]
+        if len(starts) < 2:
+            continue
+        for i, cl in enumerate(starts):
+            for cr in starts[i + 1 :]:
+                if not (MINSIDE < cr - cl < MAXSIDE):
+                    continue
+                if not solid_h(rt, cl + 4, cr - 4):
+                    continue
+                for rb in rows_c:
+                    if not (MINSIDE < rb - rt < MAXSIDE):
+                        continue
+                    if (
+                        solid_h(rb, cl + 4, cr - 4)
+                        and solid_v(cl, rt + 4, rb - 4)
+                        and solid_v(cr, rt + 4, rb - 4)
+                    ):
+                        boxes.append((cl, rt, cr, rb))
+                        break
+    # keep outermost boxes only (a frame often nests scale bars/notes)
+    boxes.sort(key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), reverse=True)
+    kept = []
+    for b in boxes:
+        if not any(
+            b[0] >= k[0] and b[1] >= k[1] and b[2] <= k[2] and b[3] <= k[3] for k in kept
+        ):
+            kept.append(b)
+
+    gt = src.GetGeoTransform()
+    srs = src.GetSpatialRef()
+    wgs = osr.SpatialReference()
+    wgs.ImportFromEPSG(4326)
+    wgs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    rev = osr.CoordinateTransformation(srs, wgs)
+    out = []
+    for cl, rt, cr, rb in kept:
+        pad = 6
+        quad = []
+        for px, py in (
+            (cl - pad, rt - pad),
+            (cr + pad, rt - pad),
+            (cr + pad, rb + pad),
+            (cl - pad, rb + pad),
+            (cl - pad, rt - pad),
+        ):
+            X, Y = gdal.ApplyGeoTransform(gt, px * D, py * D)
+            lon, lat = rev.TransformPoint(X, Y)[:2]
+            quad.append([lon, lat])
+        out.append(quad)
+    return out
+
+
 def one(chart):
     w, n, cols, ftop, fbot, yield_cols, side, auto_insets = detect(chart)
     polys = emit(chart, w, n, cols, ftop, fbot, skip=yield_cols)
-    insets = list(auto_insets) + [
+    insets = list(auto_insets) + detect_frames(chart) + [
         source_rect_quad(
             chart,
             tuple(entry["box"])
@@ -897,12 +1120,8 @@ if __name__ == "__main__":
     # per line). v2 selected by the presence of a leftover v1 cutline
     # file, which is how sheet-list drift went unnoticed. A listed chart
     # missing from src/ is a hard failure, never a silent skip.
-    charts = [
-        line.strip()
-        for line in open(os.path.join(os.path.dirname(SRC), "..", "..", "charts.txt"))
-        if line.strip() and not line.startswith("#")
-    ]
-    missing = [c for c in charts if not os.path.isdir(os.path.join(SRC, c))]
+    charts = units.read_list(REGION)
+    missing = [c for c in charts if not os.path.exists(units.unit_paths(c)[0])]
     if missing:
         raise SystemExit(f"charts.txt entries missing from {SRC}: {missing}")
     out = {}
@@ -913,5 +1132,6 @@ if __name__ == "__main__":
             print(line, flush=True)
             out[chart] = region
 
-    json.dump(out, open("/repo/data/conus/dataregions.json", "w"))
+    os.makedirs(f"/repo/data/{REGION}", exist_ok=True)
+    json.dump(out, open(f"/repo/data/{REGION}/dataregions.json", "w"))
     print("wrote dataregions.json")

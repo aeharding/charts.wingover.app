@@ -1,0 +1,2 @@
+# Shipped inside the Hawaiian Islands zip as its own georeferenced scan.
+Hawaiian_Islands::Mariana Islands Inset SEC

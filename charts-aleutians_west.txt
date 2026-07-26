@@ -1,0 +1,2 @@
+# East longitudes (168E-178.65E), covering Attu/Shemya/Kiska. Its own region so the hole-gate grid stays contiguous.
+Western_Aleutian_Islands::Western Aleutian Islands West SEC

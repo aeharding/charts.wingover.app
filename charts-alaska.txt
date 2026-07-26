@@ -1,0 +1,15 @@
+# 14 mainland sheets. Western Aleutians East is EXCLUDED: despite FAA's East/West split it still straddles the antimeridian (177E..-172W), which one web-mercator warp cannot express; its unique area past Attu is open ocean. TODO: split that scan at 180 into two units to recover it.
+Anchorage
+Bethel
+Cape_Lisburne
+Cold_Bay
+Dawson
+Dutch_Harbor
+Fairbanks
+Juneau
+Ketchikan
+Kodiak
+McGrath
+Nome
+Point_Barrow
+Seward
