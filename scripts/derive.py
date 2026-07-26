@@ -135,6 +135,7 @@ def detect(chart):
     di[1:] |= er[:-1]; di[:-1] |= er[1:]
     di[:, 1:] |= er[:, :-1]; di[:, :-1] |= er[:, 1:]
     body = di
+
     # per column: FULL span (first..last body cell) — but only when the
     # column is mostly body. Interior white islands (salt flats, playas)
     # ride inside dense columns and are kept; a SPARSE column (isolated
@@ -163,6 +164,116 @@ def detect(chart):
         if prev + 1 - run_s > best_e - best_s:
             best_s, best_e = run_s, prev + 1
         spans.append((best_s, best_e))
+    valid_cols = [ci for ci in range(cols) if spans[ci][1] - spans[ci][0] > 2]
+    # AUTOMATIC ADDENDUM DETECTION. A printed inset mini-map is ink that
+    # the box's white margin fully isolates from the sheet's map — i.e.
+    # a connected component of the PRE-BRIDGE classification that is not
+    # the main body. Seeding each box by hand missed two off the
+    # California coast (Mendocino ~39N, Point Conception ~34.7N); this
+    # finds every one on every sheet, this edition and the next.
+    # White-dominant diagram boxes (Eglin) carry no ink component and
+    # stay in insets.json.
+    olabel = np.full((rows, cols), -1, int)
+    comps = []
+    cur = 0
+    for ri in range(rows):
+        for ci in range(cols):
+            if strict_orig[ri, ci] and olabel[ri, ci] < 0:
+                stack = [(ri, ci)]
+                olabel[ri, ci] = cur
+                cells = []
+                while stack:
+                    y, x = stack.pop()
+                    cells.append((y, x))
+                    for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        yy, xx = y + dy, x + dx
+                        if (
+                            0 <= yy < rows
+                            and 0 <= xx < cols
+                            and strict_orig[yy, xx]
+                            and olabel[yy, xx] < 0
+                        ):
+                            olabel[yy, xx] = cur
+                            stack.append((yy, xx))
+                comps.append(cells)
+                cur += 1
+    auto_insets = []
+    if comps:
+        main = max(range(len(comps)), key=lambda i: len(comps[i]))
+        main_mask = np.zeros((rows, cols), bool)
+        for y, x in comps[main]:
+            main_mask[y, x] = True
+        dilated_main = main_mask.copy()
+        for _ in range(2):
+            g = dilated_main.copy()
+            dilated_main[1:] |= g[:-1]
+            dilated_main[:-1] |= g[1:]
+            dilated_main[:, 1:] |= g[:, :-1]
+            dilated_main[:, :-1] |= g[:, 1:]
+        for i, cells in enumerate(comps):
+            if i == main or len(cells) < 3:
+                continue
+            rs = [c[0] for c in cells]
+            cs = [c[1] for c in cells]
+            r0, r1, c0, c1 = min(rs), max(rs) + 1, min(cs), max(cs) + 1
+            # An addendum is COMPACT and INTERIOR. Overedge strips
+            # beyond a Joins-ruler are also ink isolated by white, but
+            # they are narrow, edge-anchored and extreme-aspect — never
+            # chop those, they are real map.
+            hw, hh = c1 - c0, r1 - r0
+            if hw > 30 or hh > 30 or hw < 2 or hh < 2:
+                continue
+            # Overedge strips (real map beyond a Joins-ruler) are tall
+            # and narrow; addenda and margin artwork are compact blocks.
+            if max(hw, hh) > 5 * min(hw, hh):
+                continue
+            # DISTANCE TO THE MAP BODY is the reliable discriminator.
+            # An overedge strip is separated from the body by only the
+            # thin printed ruler (1 cell); margin artwork and addenda
+            # sit behind a wide white margin. Chopping by aspect alone
+            # ate real Pacific chart off northern California.
+            if (dilated_main[r0:r1, c0:c1]).any():
+                continue
+            # must sit INSIDE the sheet's data body (a legend swatch at
+            # the sheet edge is already outside the cutline)
+            mid_c = (c0 + c1) // 2
+            t, b = spans[mid_c] if mid_c < len(spans) else (0, 0)
+            if not (t <= (r0 + r1) // 2 < b):
+                continue
+            # absorb the surrounding white margin so no halo ships
+            while r0 > 0 and white[r0 - 1, c0:c1].mean() > 0.6:
+                r0 -= 1
+            while r1 < rows and white[r1, c0:c1].mean() > 0.6:
+                r1 += 1
+            while c0 > 0 and white[r0:r1, c0 - 1].mean() > 0.6:
+                c0 -= 1
+            while c1 < cols and white[r0:r1, c1].mean() > 0.6:
+                c1 += 1
+            auto_insets.append(
+                (w + c0 * CELL, n - r1 * CELL, w + c1 * CELL, n - r0 * CELL)
+            )
+    # merge overlapping/adjacent boxes (one addendum can split into
+    # several ink components)
+    merged = []
+    for box in sorted(auto_insets):
+        for j, m in enumerate(merged):
+            if not (box[0] > m[2] or box[2] < m[0] or box[1] > m[3] or box[3] < m[1]):
+                merged[j] = (
+                    min(box[0], m[0]),
+                    min(box[1], m[1]),
+                    max(box[2], m[2]),
+                    max(box[3], m[3]),
+                )
+                break
+        else:
+            merged.append(box)
+    # Addenda are printed SQUARE ON THE SHEET, so they are axis-aligned
+    # in the source projection and TILTED in lon/lat. Snapping each
+    # detected bbox to a source-projection rectangle and emitting it as
+    # a lon/lat QUAD chops the whole printed box tightly — a lon/lat
+    # bbox either leaves the tilted corners uncut or eats real chart.
+    auto_insets = [source_rect_quad(chart, box) for box in merged]
+
     # TRUE SIDE EDGES: sheets are rectangular in their native LCC, so a
     # side margin is a TILTED line here — it wanders across 2-3 columns
     # over the sheet's height, and any column it crosses carries a white
@@ -173,7 +284,6 @@ def detect(chart):
     # rims (Matinicus Isle sits in New York's east yield columns with no
     # Halifax coverage below 44N; cutting it unconditionally clipped the
     # island). Interior (panel-adjacent) group edges are never yielded.
-    valid_cols = [ci for ci in range(cols) if spans[ci][1] - spans[ci][0] > 2]
     yield_cols = set()
     if valid_cols:
         yield_cols.update(range(valid_cols[0], min(valid_cols[0] + 3, cols)))
@@ -301,6 +411,20 @@ def detect(chart):
                 r1 = min((bi + 1) * PX, bot_r)
                 if r1 - r0 < PX // 3:
                     continue
+                # The band must actually contain MAP here. The reference
+                # column's span covers the sheet's full height, but at
+                # some bands the outermost columns hold only MARGIN
+                # (the FAA index diagram, QR code and barcode) — the
+                # ink scan happily latched onto that and shipped it as
+                # a colored fragment floating in the Pacific.
+                # strict_orig, NOT body: bridging and the opening fill
+                # cells across the margin, so the post-processed mask
+                # answers "yes there is map here" for bands that hold
+                # only the index diagram.
+                if bi >= rows or not strict_orig[
+                    bi, min(group) : max(group) + 1
+                ].any():
+                    continue
                 # SUSTAINED ink (8 consecutive columns), same as the
                 # row snap: a single col_ink hit latched onto the
                 # sheet's outer FRAME LINE and included the whole margin
@@ -308,10 +432,15 @@ def detect(chart):
                 # scanner sweep). Map is continuously inky; the frame
                 # stroke is 2-3 px.
                 SRUN = 8
+                # Scan ONLY within the body's own columns: starting a
+                # cell outside let the scan latch onto MARGIN artwork
+                # printed beyond the neatline (the FAA index diagram, QR
+                # code and barcode), which then shipped as a colored
+                # fragment floating in the ocean at west-facing rims.
                 if is_left:
                     x_edge = None
                     run = 0
-                    for xx in range(max((min(group) - 1) * PX, 0), (max(group) + 1) * PX):
+                    for xx in range(min(group) * PX, (max(group) + 1) * PX):
                         run = run + 1 if col_ink(xx, r0, r1) else 0
                         if run == SRUN:
                             x_edge = w + (xx - SRUN + 1) * RES
@@ -322,7 +451,7 @@ def detect(chart):
                 else:
                     x_edge = None
                     run = 0
-                    for xx in range(min((max(group) + 2) * PX, Wpx) - 1, min(group) * PX - 1, -1):
+                    for xx in range((max(group) + 1) * PX - 1, min(group) * PX - 1, -1):
                         run = run + 1 if col_ink(xx, r0, r1) else 0
                         if run == SRUN:
                             x_edge = w + (xx + SRUN) * RES
@@ -334,7 +463,7 @@ def detect(chart):
                 side_polys.append(
                     [[x0r, y0r], [x1r, y0r], [x1r, y1r], [x0r, y1r], [x0r, y0r]]
                 )
-    return w, n, cols, ftop, fbot, yield_cols, side_polys
+    return w, n, cols, ftop, fbot, yield_cols, side_polys, auto_insets
 
 def emit(chart, w, n, cols, ftop, fbot, skip=frozenset()):
     # merge columns with equal (RES-quantized) snapped spans into slabs
@@ -665,22 +794,101 @@ def detect_inset(chart, seed_lon, seed_lat):
 INSETS_PATH = os.path.join(os.path.dirname(SRC), "..", "..", "insets.json")
 INSETS = json.load(open(INSETS_PATH)) if os.path.exists(INSETS_PATH) else []
 
+def source_rect_quad(chart, box, pad=0.01):
+    """lon/lat bbox -> rectangle in the sheet's own projection, returned
+    as a lon/lat quad (5 points, closed)."""
+    from osgeo import osr
+
+    d = os.path.join(SRC, chart)
+    tif = [f for f in os.listdir(d) if f.lower().endswith(".tif")][0]
+    src = gdal.Open(os.path.join(d, tif))
+    srs = src.GetSpatialRef()
+    wgs = osr.SpatialReference()
+    wgs.ImportFromEPSG(4326)
+    wgs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    fwd = osr.CoordinateTransformation(wgs, srs)
+    rev = osr.CoordinateTransformation(srs, wgs)
+    w0, s0, e0, n0 = box
+    xs, ys = [], []
+    # sample the bbox edges (not just corners): the projection curves
+    for t in [i / 8 for i in range(9)]:
+        for lon, lat in (
+            (w0 + (e0 - w0) * t, s0),
+            (w0 + (e0 - w0) * t, n0),
+            (w0, s0 + (n0 - s0) * t),
+            (e0, s0 + (n0 - s0) * t),
+        ):
+            X, Y = fwd.TransformPoint(lon, lat)[:2]
+            xs.append(X)
+            ys.append(Y)
+    px = pad * 111000
+    x0, x1 = min(xs) - px, max(xs) + px
+    y0, y1 = min(ys) - px, max(ys) + px
+    quad = []
+    for X, Y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)):
+        lon, lat = rev.TransformPoint(X, Y)[:2]
+        quad.append([lon, lat])
+    # CLIP to the detected lon/lat box. The projection bbox of a
+    # lon/lat box is INFLATED by the sheet tilt (~0.3 deg over a
+    # 3.4-deg-tall legend panel), and that overshoot ate real Pacific
+    # chart beside the Klamath Falls panel. The printed box lies inside
+    # both shapes, so their intersection covers it without overreach.
+    from osgeo import ogr
+
+    def poly_of(points):
+        ring = ogr.Geometry(ogr.wkbLinearRing)
+        for lon, lat in points:
+            ring.AddPoint_2D(float(lon), float(lat))
+        p = ogr.Geometry(ogr.wkbPolygon)
+        p.AddGeometry(ring)
+        return p
+
+    clipped = poly_of(quad).Intersection(
+        poly_of(
+            [(w0, s0), (e0, s0), (e0, n0), (w0, n0), (w0, s0)]
+        )
+    )
+    if clipped is None or clipped.IsEmpty():
+        return quad
+    ring = clipped.GetGeometryRef(0)
+    return [[ring.GetX(i), ring.GetY(i)] for i in range(ring.GetPointCount())]
+
+
 def one(chart):
-    w, n, cols, ftop, fbot, yield_cols, side = detect(chart)
+    w, n, cols, ftop, fbot, yield_cols, side, auto_insets = detect(chart)
     polys = emit(chart, w, n, cols, ftop, fbot, skip=yield_cols)
-    insets = [
-        tuple(entry["box"]) if "box" in entry else detect_inset(chart, *entry["seed"])
+    insets = list(auto_insets) + [
+        source_rect_quad(
+            chart,
+            tuple(entry["box"])
+            if "box" in entry
+            else detect_inset(chart, *entry["seed"]),
+        )
         for entry in INSETS
         if entry["sheet"] == chart
     ]
     # summary: overall data bbox + slab count
     xs = [p for poly in polys for p, _ in poly]
     ys = [q for poly in polys for _, q in poly]
+    boxes = "".join(
+        f"\n    chop [{min(p[0] for p in q):.3f},{min(p[1] for p in q):.3f} .. "
+        f"{max(p[0] for p in q):.3f},{max(p[1] for p in q):.3f}]"
+        for q in insets
+    )
     line = (
         f"{chart:22} data [{min(xs):9.4f},{min(ys):8.4f} .. {max(xs):9.4f},{max(ys):8.4f}]"
-        f"  slabs={len(polys)} yield={len(side)} insets={len(insets)}"
+        f"  slabs={len(polys)} yield={len(side)} insets={len(insets)}{boxes}"
     )
-    return chart, {"polys": polys, "side": side, "insets": insets}, line
+    return (
+        chart,
+        {
+            "polys": polys,
+            "side": side,
+            "insets": insets,
+        },
+        line,
+    )
 
 if __name__ == "__main__":
     from multiprocessing import Pool

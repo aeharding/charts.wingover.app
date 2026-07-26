@@ -12,6 +12,9 @@
 import json
 
 import numpy as np
+from osgeo import ogr
+
+ogr.UseExceptions()
 
 CELL = 1 / 12
 DATA = "/repo/data/conus/dataregions.json"
@@ -40,38 +43,39 @@ for chart, r in regions.items():
 def ring(x0, y0, x1, y1):
     return [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]
 
-def subtract(polys, box):
-    """Rectilinear polys minus an axis-aligned box (up to 4 rects each)."""
-    ex0, ey0, ex1, ey1 = box
+def to_ogr(rings):
+    """List of closed rings -> OGR MultiPolygon (unioned)."""
+    mp = ogr.Geometry(ogr.wkbMultiPolygon)
+    for r in rings:
+        poly = ogr.Geometry(ogr.wkbPolygon)
+        lr = ogr.Geometry(ogr.wkbLinearRing)
+        for x, y in r:
+            lr.AddPoint_2D(float(x), float(y))
+        poly.AddGeometry(lr)
+        mp.AddGeometry(poly)
+    return mp.UnionCascaded() if mp.GetGeometryCount() > 1 else mp
+
+def rings_of(geom):
+    """OGR geometry -> list of exterior rings (holes are emitted as
+    separate cutline features by the caller; gdalwarp honours them)."""
     out = []
-    for poly in polys:
-        xs = [p[0] for p in poly]
-        ys = [p[1] for p in poly]
-        x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
-        if ex0 >= x1 or ex1 <= x0 or ey0 >= y1 or ey1 <= y0:
-            out.append(poly)
-            continue
-        ix0, ix1 = max(x0, ex0), min(x1, ex1)
-        iy0, iy1 = max(y0, ey0), min(y1, ey1)
-        if x0 < ix0:
-            out.append(ring(x0, y0, ix0, y1))
-        if ix1 < x1:
-            out.append(ring(ix1, y0, x1, y1))
-        if y0 < iy0:
-            out.append(ring(ix0, y0, ix1, iy0))
-        if iy1 < y1:
-            out.append(ring(ix0, iy1, ix1, y1))
+    if geom is None or geom.IsEmpty():
+        return out
+    t = geom.GetGeometryName()
+    if t == "POLYGON":
+        for i in range(geom.GetGeometryCount()):
+            r = geom.GetGeometryRef(i)
+            out.append([(r.GetX(j), r.GetY(j)) for j in range(r.GetPointCount())])
+    elif t in ("MULTIPOLYGON", "GEOMETRYCOLLECTION"):
+        for i in range(geom.GetGeometryCount()):
+            out.extend(rings_of(geom.GetGeometryRef(i)))
     return out
 
 final = {}
+prechop = {}
 kept_sides = dropped_sides = 0
 for chart, r in regions.items():
     polys = list(r["polys"])
-    if r["polys"]:
-        all_x = [p[0] for poly in r["polys"] for p in poly]
-        body_cx = (min(all_x) + max(all_x)) / 2
-    else:
-        body_cx = 0.0
     for poly in r["side"]:
         xs = [p[0] for p in poly]
         ys = [p[1] for p in poly]
@@ -80,30 +84,34 @@ for chart, r in regions.items():
         gr0 = int(np.ceil((min(ys) - S0) / CELL - 0.5))
         gr1 = int(np.floor((max(ys) - S0) / CELL + 0.5))
         gr0, gr1 = max(gr0, 0), min(gr1, GH)
-        # Keep the side wherever the neighbor's body does NOT cover it.
-        # At deep-overlap joints the neighbor covers -> dropped (its
-        # pure map wins). At ABUTTING pairs (Cheyenne/Omaha at 101W the
-        # sheets meet with only their printed "Joins ___" ruler strips
-        # between them) and at true rims (Matinicus) the side is kept:
-        # the visible ruler at an abutting joint is the authentic paper
-        # artifact — the alternative is a bare basemap gap, which reads
-        # as missing data.
+        # Keep the side wherever the neighbor's body does NOT cover it:
+        # dropped at deep-overlap joints (neighbor's pure map wins),
+        # kept at abutting pairs and true rims (Matinicus).
         covered = body_grid[gr0:gr1, max(gc0, 0) : min(gc1, GW)].all()
         if covered:
             dropped_sides += 1
         else:
             kept_sides += 1
             polys.append(poly)
-    for box in r["insets"]:
-        polys = subtract(polys, box)
-    final[chart] = polys
+    # Addendum chops are TILTED quads (rectangles in the sheet's own
+    # projection), so subtraction needs real polygon booleans — GEOS via
+    # OGR — not the axis-aligned rect splitting this used to do.
+    prechop[chart] = list(polys)
+    # ALWAYS union: a cutline of hundreds of overlapping parts made
+    # gdalwarp re-clip per block and blew the render from 5 to 80
+    # minutes. One clean geometry per sheet.
+    geom = to_ogr([[(p[0], p[1]) for p in poly] for poly in polys])
+    for quad in r["insets"]:
+        geom = geom.Difference(to_ogr([[(p[0], p[1]) for p in quad]]))
+    geom.Segmentize(0.05)
+    final[chart] = geom
 print(f"side columns: {kept_sides} kept (rims), {dropped_sides} dropped (covered joints)")
 
 # Coverage grid for the hole gate (0.5-cell tolerance so pixel-snapped
 # edges mid-cell don't read as holes). Chopped insets DO report as holes
 # by design — they are verified blank-on-purpose.
 grid = np.zeros((GH, GW), bool)
-for chart, polys in final.items():
+for chart, polys in prechop.items():
     for poly in polys:
         xs = [p[0] for p in poly]
         ys = [p[1] for p in poly]
@@ -145,17 +153,16 @@ def densify(ring_pts):
     out.append(list(ring_pts[0]))
     return out
 
-for chart, polys in final.items():
+for chart, geom in final.items():
     fc = {
         "type": "FeatureCollection",
-        "features": [{
-            "type": "Feature",
-            "properties": {"chart": chart},
-            "geometry": {
-                "type": "MultiPolygon",
-                "coordinates": [[densify([tuple(p) for p in poly])] for poly in polys],
-            },
-        }],
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"chart": chart},
+                "geometry": json.loads(geom.ExportToJson()),
+            }
+        ],
     }
     json.dump(fc, open(f"/repo/data/conus/src/{chart}/cutline2.geojson", "w"))
 print("wrote cutline2.geojson for", len(final), "charts")
