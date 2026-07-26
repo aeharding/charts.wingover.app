@@ -17,9 +17,20 @@ import zipfile
 chart, cycle = sys.argv[1], sys.argv[2]
 zip_path = f"data/zips/{chart}.zip"
 if not os.path.exists(zip_path):
-    url = f"https://aeronav.faa.gov/visual/{cycle}/sectional-files/{chart}.zip"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    data = urllib.request.urlopen(req, timeout=180).read()
+    # FAA splits VFR products across directories: sectionals in one,
+    # Caribbean VFR in another, TACs in a third. Try each.
+    data = None
+    for product in ("sectional-files", "Caribbean", "tac-files"):
+        url = f"https://aeronav.faa.gov/visual/{cycle}/{product}/{chart}.zip"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        try:
+            data = urllib.request.urlopen(req, timeout=180).read()
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise
+    if data is None:
+        raise SystemExit(f"{chart}: not found in any FAA product directory for {cycle}")
     with open(zip_path + ".part", "wb") as f:
         f.write(data)
     os.rename(zip_path + ".part", zip_path)

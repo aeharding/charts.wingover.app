@@ -113,9 +113,15 @@ jobs:
           bash scripts/ci-fetch.sh "$(echo "${{ matrix.sheet }}" | sed 's/::.*//')" "${{ inputs.cycle }}"
           echo "${{ matrix.sheet }}" > charts-${{ inputs.region }}.txt
           python3 scripts/derive.py
+      - name: Safe artifact name
+        id: an
+        run: echo "name=$(echo '${{ matrix.sheet }}' | tr ' :' '__')" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
-          name: regions-${{ matrix.sheet }}
+          # region-scoped: bake-all runs every region in ONE workflow run,
+          # so bare sheet names collide (both Aleutian halves share a scan)
+          # and a region would merge its neighbours' geometry.
+          name: regions-${{ inputs.region }}-${{ steps.an.outputs.name }}
           path: data/${{ inputs.region }}/dataregions.json
 
   cutlines:
@@ -127,7 +133,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
-          pattern: regions-*
+          pattern: regions-${{ inputs.region }}-*
           path: regions/
       - name: Merge and finalize
         env:
@@ -141,8 +147,8 @@ jobs:
           python3 scripts/finalize.py
       - uses: actions/upload-artifact@v7
         with:
-          name: cutlines
-          path: data/src/*/*.cutline.geojson
+          name: cutlines-${{ inputs.region }}
+          path: data/src/*/*.geojson
 
   # BLOCKING GATES. These ran only on a laptop until now, which is how a
   # detector that deleted five states reached shipped tiles with every
@@ -163,7 +169,7 @@ jobs:
           key: faa-src-${{ inputs.cycle }}
       - uses: actions/download-artifact@v8
         with:
-          name: cutlines
+          name: cutlines-${{ inputs.region }}
           path: data/src/
       - name: Sheet list matches FAA
         run: |
@@ -197,7 +203,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
-          name: cutlines
+          name: cutlines-${{ inputs.region }}
           path: data/src/
       # actions/cache keys the cache VERSION by compression tool: the
       # plain-runner fetch job saves with zstd, so the container must
