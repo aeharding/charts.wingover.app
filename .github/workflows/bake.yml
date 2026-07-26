@@ -341,6 +341,9 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           GDAL_NUM_THREADS: ALL_CPUS
+          # derive/finalize run here too: without REGION they silently
+          # read the CONUS chart list and fail on 37 missing sheets
+          REGION: ${{ inputs.region }}
         run: |
           ln -s "$PWD" /repo
           CHARTS=$(grep -vE '^\s*(#|$)' charts-${{ inputs.region }}.txt)

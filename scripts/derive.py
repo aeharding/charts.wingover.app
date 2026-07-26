@@ -1168,7 +1168,7 @@ if __name__ == "__main__":
     charts = units.read_list(REGION)
     missing = [c for c in charts if not os.path.exists(units.unit_paths(c)[0])]
     if missing:
-        raise SystemExit(f"charts.txt entries missing from {SRC}: {missing}")
+        raise SystemExit(f"charts-{REGION}.txt entries missing from {SRC}: {missing}")
     out = {}
     # Each worker holds one sheet's full-res detection warp (~0.5 GB);
     # six keep a 12-core box busy without pressuring 30 GB of RAM.
