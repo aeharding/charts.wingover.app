@@ -307,6 +307,22 @@ jobs:
             --content-type image/jxl --cache-control "public, max-age=31536000, immutable" \
             tiles3x/ "s3://$BUCKET/vfr/${{ inputs.prefix }}/3x/"
 
+  # Runs even when the bake fails: verify only runs on success, so a
+  # failed run used to leak ~100 GB of staged warps until the bucket
+  # lifecycle rule swept them.
+  cleanup:
+    needs: [tile, overview]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Drop scratch
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 rm --recursive --only-show-errors \
+            "s3://$BUCKET/scratch/${{ github.run_id }}/" || true
+
   verify:
     needs: [tile, overview]
     runs-on: ubuntu-latest
@@ -326,11 +342,4 @@ jobs:
               --bucket "$BUCKET" --key "vfr/${{ inputs.prefix }}/3x/$t.jxl" >/dev/null \
               && echo "sentinel OK: $t" || { echo "MISSING sentinel: $t" >&2; exit 1; }
           done
-      - name: Drop scratch
-        if: always()
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: |
-          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 rm --recursive --only-show-errors \
-            "s3://$BUCKET/scratch/${{ github.run_id }}/" || true
+
