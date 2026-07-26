@@ -168,10 +168,10 @@ jobs:
             -tr 12.7395047141960 12.7395047141960 \
             -r cubic -dstalpha -cutline "$CUT" -crop_to_cutline \
             -co COMPRESS=DEFLATE -co TILED=YES -co BIGTIFF=IF_SAFER \
-            -multi -wo NUM_THREADS=3 "$VRT" "$UID.tif"
+            -multi -wo NUM_THREADS=3 "$VRT" "$UNIT.tif"
           command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
           aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --quiet \
-            "$UID.tif" "s3://$BUCKET/scratch/${{ github.run_id }}/warped/$UID.tif"
+            "$UNIT.tif" "s3://$BUCKET/scratch/${{ github.run_id }}/warped/$UNIT.tif"
 
   tile:
     needs: [plan, warp]
@@ -293,7 +293,7 @@ jobs:
             [ -f "$VRT" ] || gdal_translate -q -of vrt -expand rgb "$TIF" "$VRT"
             gdalwarp -q -t_srs EPSG:3857 -tr 407.664150854 407.664150854 \
               -r average -dstalpha -cutline "$CUT" -crop_to_cutline \
-              "$VRT" "lowres/$UID.tif"
+              "$VRT" "lowres/$UNIT.tif"
           done
           gdalbuildvrt conus-low.vrt lowres/*.tif
           gdal raster tile -f JPEGXL \
