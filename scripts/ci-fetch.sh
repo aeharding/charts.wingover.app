@@ -1,5 +1,5 @@
 #!/bin/bash
-# Ensure one sheet's source is present in data/conus/src/<Chart>/.
+# Ensure one sheet's source is present in data/src/<Chart>/.
 # Zips live in data/zips/ (cycle-immutable, cached across CI runs by
 # actions/cache); FAA is contacted only when the zip is absent — with
 # the fetch job seeding the cache, that is once per cycle ever.
@@ -7,7 +7,7 @@
 set -euo pipefail
 chart="$1"
 cycle="$2"
-mkdir -p data/zips "data/conus/src/$chart"
+mkdir -p data/zips "data/src/$chart"
 python3 - "$chart" "$cycle" <<'EOF'
 import os
 import sys
@@ -26,5 +26,5 @@ if not os.path.exists(zip_path):
     print(f"fetched {chart}: {len(data) >> 20} MB")
 else:
     print(f"cached {chart}")
-zipfile.ZipFile(zip_path).extractall(f"data/conus/src/{chart}")
+zipfile.ZipFile(zip_path).extractall(f"data/src/{chart}")
 EOF
