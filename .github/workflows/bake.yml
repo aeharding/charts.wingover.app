@@ -183,9 +183,11 @@ jobs:
         env:
           REGION: ${{ inputs.region }}
         run: |
-          for c in $(grep -vE '^\s*(#|$)' charts-${{ inputs.region }}.txt | sed 's/::.*//' | sort -u); do
-            bash scripts/ci-fetch.sh "$c" "${{ inputs.cycle }}"
-          done
+          grep -vE '^\s*(#|$)' charts-${{ inputs.region }}.txt | sed 's/::.*//' | sort -u \
+            | while IFS= read -r c; do
+                [ -n "$c" ] || continue
+                bash scripts/ci-fetch.sh "$c" "${{ inputs.cycle }}"
+              done
           bash scripts/preview.sh
           python3 scripts/coverage-check.py "${{ inputs.region }}"
           python3 scripts/seamscan.py | tail -20
@@ -345,16 +347,17 @@ jobs:
           for c in $CHARTS; do bash scripts/ci-fetch.sh "$c" "${{ inputs.cycle }}"; done
           python3 scripts/derive.py
           python3 scripts/finalize.py
-          cd data/conus
+          mkdir -p "data/${{ inputs.region }}" && cd "data/${{ inputs.region }}"
           mkdir -p lowres
           # z7@3x ground resolution — the whole CONUS mosaic is ~13k px wide
-          for c in $CHARTS; do
+          while IFS= read -r c; do
+            [ -n "$c" ] || continue
             eval "$(python3 /repo/scripts/unit-env.py "${{ inputs.region }}" "$c")"
             [ -f "$VRT" ] || gdal_translate -q -of vrt -expand rgb "$TIF" "$VRT"
             gdalwarp -q -t_srs EPSG:3857 -tr 407.664150854 407.664150854 \
               -r average -dstalpha -cutline "$CUT" -crop_to_cutline \
               "$VRT" "lowres/$UNIT.tif"
-          done
+          done <<< "$CHARTS"
           gdalbuildvrt conus-low.vrt lowres/*.tif
           gdal raster tile -f JPEGXL \
             --creation-option LOSSLESS=NO --creation-option DISTANCE=4 --creation-option EFFORT=7 \
