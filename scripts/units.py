@@ -33,13 +33,21 @@ def unit_paths(entry):
         tif = os.path.join(SRC, d, stem + ".tif")
     else:
         d = entry
-        tifs = [f for f in os.listdir(os.path.join(SRC, d)) if f.lower().endswith(".tif")]
-        if len(tifs) != 1:
+        dpath = os.path.join(SRC, d)
+        tifs = (
+            [f for f in os.listdir(dpath) if f.lower().endswith(".tif")]
+            if os.path.isdir(dpath)
+            else []
+        )
+        if len(tifs) > 1:
             raise SystemExit(
                 f"{d} has {len(tifs)} TIFs; list its units explicitly as "
                 f"'{d}::<stem>' in the region chart list"
             )
-        tif = os.path.join(SRC, d, tifs[0])
+        # No scan present is fine: the cutlines stage works purely on
+        # geometry and never reads a TIF, so path derivation must not
+        # demand one (it failed the whole bake at that stage).
+        tif = os.path.join(dpath, tifs[0] if tifs else d + ".tif")
     uid = unit_id(entry)
     return tif, os.path.join(SRC, d, uid + ".vrt"), os.path.join(SRC, d, uid + ".cutline.geojson")
 
