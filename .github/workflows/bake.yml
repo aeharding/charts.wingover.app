@@ -144,8 +144,48 @@ jobs:
           name: cutlines
           path: data/src/*/*.cutline.geojson
 
+  # BLOCKING GATES. These ran only on a laptop until now, which is how a
+  # detector that deleted five states reached shipped tiles with every
+  # CI check green. They run before the expensive warp/tile stages so a
+  # broken run costs minutes, not hours.
+  gate:
+    needs: cutlines
+    if: ${{ inputs.stages == 'all' }}
+    runs-on: ubuntu-latest
+    container: ghcr.io/osgeo/gdal:ubuntu-full-latest
+    defaults: { run: { shell: bash } }
+    steps:
+      - uses: actions/checkout@v7
+      - run: command -v zstd >/dev/null || { apt-get update -qq && apt-get install -y -qq zstd; } >/dev/null
+      - uses: actions/cache/restore@v6
+        with:
+          path: data/zips
+          key: faa-src-${{ inputs.cycle }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: cutlines
+          path: data/src/
+      - name: Sheet list matches FAA
+        run: |
+          ln -s "$PWD" /repo
+          python3 scripts/check-sheet-list.py "${{ inputs.cycle }}"
+      - name: Area drift vs baseline
+        env:
+          REGION: ${{ inputs.region }}
+        run: python3 scripts/area-check.py "${{ inputs.region }}"
+      - name: Render preview and check coverage + seams
+        env:
+          REGION: ${{ inputs.region }}
+        run: |
+          for c in $(grep -vE '^\s*(#|$)' charts-${{ inputs.region }}.txt | sed 's/::.*//' | sort -u); do
+            bash scripts/ci-fetch.sh "$c" "${{ inputs.cycle }}"
+          done
+          bash scripts/preview.sh
+          python3 scripts/coverage-check.py "${{ inputs.region }}"
+          python3 scripts/seamscan.py | tail -20
+
   warp:
-    needs: [plan, cutlines]
+    needs: [plan, cutlines, gate]
     runs-on: ubuntu-latest
     container: ghcr.io/osgeo/gdal:ubuntu-full-latest
     defaults: { run: { shell: bash } }

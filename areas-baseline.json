@@ -1,0 +1,78 @@
+{
+  "alaska": {
+    "Anchorage": 47.097233,
+    "Bethel": 55.46659,
+    "Cape_Lisburne": 65.513828,
+    "Cold_Bay": 22.494201,
+    "Dawson": 56.81123,
+    "Dutch_Harbor": 37.425258,
+    "Fairbanks": 56.563755,
+    "Juneau": 44.114977,
+    "Ketchikan": 39.852626,
+    "Kodiak": 46.57253,
+    "McGrath": 47.498021,
+    "Nome": 59.749375,
+    "Point_Barrow": 71.960279,
+    "Seward": 27.941693
+  },
+  "aleutians_far": {
+    "Western_Aleutian_Islands::Western Aleutian Islands East SEC": 16.358088
+  },
+  "aleutians_west": {
+    "Western_Aleutian_Islands::Western Aleutian Islands East SEC": 16.358088,
+    "Western_Aleutian_Islands::Western Aleutian Islands West SEC": 19.642823
+  },
+  "caribbean": {
+    "Caribbean_1_VFR": 150.103125,
+    "Caribbean_2_VFR": 103.065
+  },
+  "conus": {
+    "Albuquerque": 30.261793,
+    "Atlanta": 30.197129,
+    "Billings": 39.108269,
+    "Brownsville": 27.050055,
+    "Charlotte": 29.963284,
+    "Cheyenne": 37.476584,
+    "Chicago": 35.765187,
+    "Cincinnati": 30.546373,
+    "Dallas-Ft_Worth": 30.248474,
+    "Denver": 32.079764,
+    "Detroit": 34.717407,
+    "El_Paso": 27.564009,
+    "Great_Falls": 39.060866,
+    "Green_Bay": 37.166187,
+    "Halifax": 35.396704,
+    "Houston": 27.656155,
+    "Jacksonville": 24.687819,
+    "Kansas_City": 30.511683,
+    "Klamath_Falls": 37.471567,
+    "Lake_Huron": 36.04696,
+    "Las_Vegas": 32.048388,
+    "Los_Angeles": 26.51532,
+    "Memphis": 30.285897,
+    "Miami": 27.537753,
+    "Montreal": 36.103621,
+    "New_Orleans": 25.909135,
+    "New_York": 34.801389,
+    "Omaha": 37.466126,
+    "Phoenix": 31.556784,
+    "Salt_Lake_City": 37.408767,
+    "San_Antonio": 28.001064,
+    "San_Francisco": 30.689407,
+    "Seattle": 39.138248,
+    "St_Louis": 31.913595,
+    "Twin_Cities": 39.193814,
+    "Washington": 29.381198,
+    "Wichita": 30.84889
+  },
+  "hawaii": {
+    "Hawaiian_Islands::Hawaiian Islands SEC": 13.95541,
+    "Hawaiian_Islands::Honolulu Inset SEC": 0.488854
+  },
+  "mariana": {
+    "Hawaiian_Islands::Mariana Islands Inset SEC": 6.947081
+  },
+  "samoa": {
+    "Hawaiian_Islands::Samoan Islands Inset SEC": 4.341221
+  }
+}

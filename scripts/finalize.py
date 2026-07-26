@@ -81,8 +81,10 @@ def rings_of(geom):
 final = {}
 prechop = {}
 kept_sides = dropped_sides = 0
+side_only = {}
 for chart, r in regions.items():
     polys = list(r["polys"])
+    kept_side_polys = []
     for poly in r["side"]:
         xs = [p[0] for p in poly]
         ys = [p[1] for p in poly]
@@ -94,16 +96,25 @@ for chart, r in regions.items():
         # Keep the side wherever the neighbor's body does NOT cover it:
         # dropped at deep-overlap joints (neighbor's pure map wins),
         # kept at abutting pairs and true rims (Matinicus).
+        # KEEP EVERY overedge strip — it is the UNDERLAY. A sheet's
+        # printed neatline stroke sits at the edge of its own map, so
+        # wherever a body edge is trimmed back the neighbour's overedge
+        # must be there to show through; discarding covered strips is
+        # what left Halifax's neatline drawn across 44N at Matinicus.
+        # Sides render beneath every body (see preview.sh), so this adds
+        # no bleed: it only fills what bodies give up.
         covered = body_grid[gr0:gr1, max(gc0, 0) : min(gc1, GW)].all()
         if covered:
             dropped_sides += 1
         else:
             kept_sides += 1
-            polys.append(poly)
+        polys.append(poly)
+        kept_side_polys.append(poly)
     # Addendum chops are TILTED quads (rectangles in the sheet's own
     # projection), so subtraction needs real polygon booleans — GEOS via
     # OGR — not the axis-aligned rect splitting this used to do.
     prechop[chart] = list(polys)
+    side_only[chart] = kept_side_polys
     # ALWAYS union: a cutline of hundreds of overlapping parts made
     # gdalwarp re-clip per block and blew the render from 5 to 80
     # minutes. One clean geometry per sheet.
@@ -112,7 +123,10 @@ for chart, r in regions.items():
         geom = geom.Difference(to_ogr([[(p[0], p[1]) for p in quad]]))
     geom.Segmentize(0.05)
     final[chart] = geom
-print(f"side columns: {kept_sides} kept (rims), {dropped_sides} dropped (covered joints)")
+print(
+    f"side strips: {kept_sides + dropped_sides} kept as underlay "
+    f"({dropped_sides} of them beneath a neighbour body)"
+)
 
 # CONDITIONAL EDGE RETREAT (rectangle arithmetic, never GEOS).
 # Sheet edges must pull back ~550 m inside their printed ink so a
@@ -187,11 +201,13 @@ retreated = abutting = internal = 0
 tentative = {}
 for chart, polys in prechop.items():
     out = []
+    sideset = {id(p) for p in side_only.get(chart, [])}
     for idx, poly in enumerate(polys):
         xs = [p[0] for p in poly]
         ys = [p[1] for p in poly]
         x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
         xm = (x0 + x1) / 2
+        is_side = id(poly) in sideset
         ry1, ry0 = y1, y0
         if covered_by_self(chart, xm, y1 + RETREAT * 0.5, idx):
             internal += 1
@@ -207,7 +223,7 @@ for chart, polys in prechop.items():
             retreated += 1
         else:
             abutting += 1
-        out.append([x0, x1, y0, y1, ry0, ry1])
+        out.append([x0, x1, y0, y1, ry0, ry1, is_side])
     tentative[chart] = out
 
 # VERIFY, THEN UNDO. Probing that a neighbour covers my edge is not
@@ -235,7 +251,7 @@ def post_covered(chart, lon, lat):
 undone = 0
 for chart, rows in tentative.items():
     for r in rows:
-        x0, x1, y0, y1, ry0, ry1 = r
+        x0, x1, y0, y1, ry0, ry1 = r[:6]
         xm = (x0 + x1) / 2
         if ry1 < y1 and not post_covered(chart, xm, (ry1 + y1) / 2):
             r[5] = y1
@@ -244,12 +260,19 @@ for chart, rows in tentative.items():
             r[4] = y0
             undone += 1
 
+body_rects = {}
+side_rects = {}
 for chart, rows in tentative.items():
-    out = []
-    for x0, x1, y0, y1, ry0, ry1 in rows:
-        if ry1 > ry0:
-            out.append([[x0, ry0], [x1, ry0], [x1, ry1], [x0, ry1], [x0, ry0]])
+    out, bodies, sides = [], [], []
+    for x0, x1, y0, y1, ry0, ry1, is_side in rows:
+        if ry1 <= ry0:
+            continue
+        rect = [[x0, ry0], [x1, ry0], [x1, ry1], [x0, ry1], [x0, ry0]]
+        out.append(rect)
+        (sides if is_side else bodies).append(rect)
     prechop[chart] = out
+    body_rects[chart] = bodies
+    side_rects[chart] = sides
 print(
     f"edges: {retreated} retreated, {abutting} kept (abutting/rim), "
     f"{internal} own-band seams, {undone} retreats undone (would have holed)"
@@ -257,7 +280,10 @@ print(
 
 # rebuild the shipped geometry from the adjusted slabs
 for chart in list(final):
-    geom = to_ogr([[(p[0], p[1]) for p in poly] for poly in prechop[chart]])
+    # BODY ONLY: the sheet's overedge strips ship in a separate cutline
+    # so the mosaic can draw them under every body (see preview.sh).
+    src_polys = body_rects.get(chart) or prechop[chart]
+    geom = to_ogr([[(p[0], p[1]) for p in poly] for poly in src_polys])
     for quad in regions[chart]["insets"]:
         geom = geom.Difference(to_ogr([[(p[0], p[1]) for p in quad]]))
     geom.Segmentize(0.05)
@@ -381,6 +407,40 @@ for chart, geom in final.items():
         ],
     }
     json.dump(fc, open(units.unit_paths(chart)[2], "w"))
+
+    # SIDE cutline: the sheet's overedge strips, written separately so
+    # the mosaic can draw every sheet's overedge UNDER every sheet's
+    # body. A sheet's printed neatline stroke lives on its overedge
+    # edge; where a neighbour has clean map over the same ground (New
+    # York's overedge under Halifax at 44N by Matinicus) drawing bodies
+    # last hides the stroke entirely. Alphabetical file order used to
+    # decide it, which is why that seam showed.
+    side_polys = side_rects.get(chart) or []
+    side_path = units.unit_paths(chart)[2].replace(".cutline.geojson", ".side.geojson")
+    if side_polys:
+        sg = to_ogr([[(p[0], p[1]) for p in poly] for poly in side_polys])
+        for quad in regions[chart]["insets"]:
+            sg = sg.Difference(to_ogr([[(p[0], p[1]) for p in quad]]))
+        sg.Segmentize(0.05)
+        sjs = roundtrip_ok(repair(sg))
+        if sjs:
+            json.dump(
+                {
+                    "type": "FeatureCollection",
+                    "features": [
+                        {
+                            "type": "Feature",
+                            "properties": {"chart": chart, "part": "side"},
+                            "geometry": json.loads(sjs),
+                        }
+                    ],
+                },
+                open(side_path, "w"),
+            )
+        elif os.path.exists(side_path):
+            os.remove(side_path)
+    elif os.path.exists(side_path):
+        os.remove(side_path)
 print(
     "wrote cutline2.geojson for", len(final), "charts"
     + (f" ({reverted} reverted to pre-gap-fill geometry)" if reverted else "")

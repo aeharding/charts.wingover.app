@@ -165,3 +165,7 @@ for kind, best, bend in (
 for f in hfindings:
     print("SEAM", f)
 print("horizontal findings:", len(hfindings))
+
+# non-zero exit so CI can gate on it
+if findings or hfindings:
+    sys.exit(1)
