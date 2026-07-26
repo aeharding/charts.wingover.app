@@ -228,10 +228,22 @@ jobs:
             --skip-blank --webviewer none band.vrt tiles3x
           echo "band ${{ matrix.band.name }}: $(find tiles3x -name '*.jxl' | wc -l) tiles"
           command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
-          aws configure set default.s3.max_concurrent_requests 6
-          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 sync --only-show-errors \
-            --content-type image/jxl --cache-control "public, max-age=31536000, immutable" \
-            tiles3x/ "s3://$BUCKET/vfr/${{ inputs.prefix }}/3x/"
+          aws configure set default.s3.max_concurrent_requests 4
+          aws configure set default.s3.max_bandwidth 50MB/s
+          aws configure set retry_mode adaptive
+          aws configure set max_attempts 10
+          # R2 throttles same-prefix PUT bursts; adaptive retries plus a
+          # whole-sync retry loop turn that into slowness, not failure
+          # (a band died at 96% on ServiceUnavailable otherwise).
+          for attempt in 1 2 3 4 5; do
+            if aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 sync --only-show-errors \
+                 --content-type image/jxl --cache-control "public, max-age=31536000, immutable" \
+                 tiles3x/ "s3://$BUCKET/vfr/${{ inputs.prefix }}/3x/"; then
+              break
+            fi
+            echo "sync attempt $attempt failed; retrying"
+            sleep $((attempt * 30))
+          done
 
   # Self-contained on purpose: z0-7 needs only ~10x-decimated imagery, so
   # warping the ORIGINAL scans at the z7 grid (with the same detected
