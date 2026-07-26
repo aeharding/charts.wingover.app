@@ -1,2 +1,3 @@
-# East longitudes (168E-178.65E), covering Attu/Shemya/Kiska. Its own region so the hole-gate grid stays contiguous.
+# East longitudes. Includes the EAST scan's 177E-180 half; its other half (180 to -172.35W, which holds Adak) is region aleutians_far. The scan straddles the antimeridian, so it is processed as two windows.
 Western_Aleutian_Islands::Western Aleutian Islands West SEC
+Western_Aleutian_Islands::Western Aleutian Islands East SEC

@@ -58,7 +58,8 @@ SENTINELS = {
     },
     "mariana": {"Guam": (145.24, 13.48), "Saipan": (145.73, 15.12)},
     "samoa": {"Pago Pago": (-170.71, -14.33)},
-    "aleutians_west": {"Adak": (-176.65, 51.88), "Shemya": (174.11, 52.71)},
+    "aleutians_west": {"Shemya": (174.11, 52.71), "Attu": (172.95, 52.83)},
+    "aleutians_far": {"Adak": (-176.65, 51.88), "Atka": (-174.2, 52.22)},
 }
 
 

@@ -52,7 +52,16 @@ def snap(v, up):
 def detect(chart):
     tif_path, _, _ = units.unit_paths(chart)
     d = os.path.dirname(tif_path)
-    w, s, e, n = fgdc_bbox(d, tif_path)
+    # A scan that straddles the antimeridian has West > East in its FGDC
+    # bbox, which no single warp window can express. regions.json can
+    # override the window so such a scan is processed as two halves
+    # (Western Aleutians East: 177E-180, and 180 to -172.35W for Adak).
+    win = (
+        json.load(open("/repo/regions.json"))[REGION]
+        .get("windows", {})
+        .get(chart)
+    )
+    w, s, e, n = win if win else fgdc_bbox(d, tif_path)
     # snap scan window outward to the cell grid
     w = np.floor(w / CELL) * CELL
     s = np.floor(s / CELL) * CELL

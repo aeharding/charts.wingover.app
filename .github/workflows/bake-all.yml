@@ -26,6 +26,7 @@ jobs:
           - conus
           - alaska
           - aleutians_west
+          - aleutians_far
           - hawaii
           - mariana
           - samoa

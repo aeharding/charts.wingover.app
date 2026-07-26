@@ -104,9 +104,18 @@
       56
     ],
     "charts": [
-      "Western_Aleutian_Islands::Western Aleutian Islands West SEC"
+      "Western_Aleutian_Islands::Western Aleutian Islands West SEC",
+      "Western_Aleutian_Islands::Western Aleutian Islands East SEC"
     ],
-    "note": "East longitudes (168E-178.65E), covering Attu/Shemya/Kiska. Its own region so the hole-gate grid stays contiguous."
+    "note": "East longitudes. Includes the EAST scan's 177E-180 half; its other half (180 to -172.35W, which holds Adak) is region aleutians_far. The scan straddles the antimeridian, so it is processed as two windows.",
+    "windows": {
+      "Western_Aleutian_Islands::Western Aleutian Islands East SEC": [
+        177.0,
+        50.7,
+        180.0,
+        53.35
+      ]
+    }
   },
   "mariana": {
     "grid": [
@@ -131,5 +140,25 @@
       "Hawaiian_Islands::Samoan Islands Inset SEC"
     ],
     "note": "Shipped inside the Hawaiian Islands zip as its own georeferenced scan."
+  },
+  "aleutians_far": {
+    "grid": [
+      -180,
+      50,
+      -171,
+      54
+    ],
+    "charts": [
+      "Western_Aleutian_Islands::Western Aleutian Islands East SEC"
+    ],
+    "windows": {
+      "Western_Aleutian_Islands::Western Aleutian Islands East SEC": [
+        -180.0,
+        50.7,
+        -172.3,
+        53.35
+      ]
+    },
+    "note": "The Western Aleutians East scan west of the antimeridian: Adak (PADK), Atka."
   }
 }
