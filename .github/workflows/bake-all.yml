@@ -1,0 +1,39 @@
+# Bake EVERY VFR region in one dispatch — the whole product, the way
+# 1800wxbrief publishes it: CONUS, Alaska, the western Aleutians,
+# Hawaii, the Marianas, Samoa and the Caribbean (Puerto Rico + VI).
+#
+# Each region runs the full bake pipeline in parallel and ships into the
+# SAME tile prefix; regions do not overlap geographically, so their
+# pyramids simply coexist. fail-fast is off: one region failing must not
+# discard the others' work.
+name: bake-all
+on:
+  workflow_dispatch:
+    inputs:
+      cycle:
+        description: FAA cycle (MM-DD-YYYY)
+        default: 07-09-2026
+      prefix:
+        description: Release prefix under /vfr/ (MUST be new)
+        default: 07-09-2026g
+
+jobs:
+  region:
+    strategy:
+      fail-fast: false
+      matrix:
+        region:
+          - conus
+          - alaska
+          - aleutians_west
+          - hawaii
+          - mariana
+          - samoa
+          - caribbean
+    uses: ./.github/workflows/bake.yml
+    with:
+      cycle: ${{ inputs.cycle }}
+      prefix: ${{ inputs.prefix }}
+      stages: all
+      region: ${{ matrix.region }}
+    secrets: inherit

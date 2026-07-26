@@ -21,6 +21,20 @@
 # app flips when verified.
 name: bake
 on:
+  workflow_call:
+    inputs:
+      cycle:
+        type: string
+        default: 07-09-2026
+      prefix:
+        type: string
+        default: 07-09-2026g
+      stages:
+        type: string
+        default: all
+      region:
+        type: string
+        default: conus
   workflow_dispatch:
     inputs:
       cycle:
@@ -50,7 +64,7 @@ jobs:
       - id: emit
         run: |
           echo "sheets=$(grep -vE '^\s*(#|$)' charts-${{ inputs.region }}.txt | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
-          echo "bands=$(python3 scripts/bands.py)" >> "$GITHUB_OUTPUT"
+          echo "bands=$(python3 scripts/bands.py "${{ inputs.region }}")" >> "$GITHUB_OUTPUT"
 
   # Download every sheet's zip ONCE per cycle into an actions/cache keyed
   # by the cycle (FAA zips are immutable within a cycle). Every other job
@@ -332,11 +346,29 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
+          # NOTE: every region ships into the same prefix, so this is a
+          # whole-product count, not this region's alone. Good enough as
+          # a floor; per-region truth comes from the coverage gate.
           total=$(aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 ls --recursive \
             "s3://$BUCKET/vfr/${{ inputs.prefix }}/3x/" | wc -l)
           echo "shipped tiles: $total"
-          [ "$total" -gt 200000 ] || { echo "suspiciously few tiles" >&2; exit 1; }
-          # The v2 regressions, plus the v1 Yellowstone hole: all must exist.
+          # Per-region floor: CONUS ships ~240k tiles, Samoa a few
+          # hundred. A single global threshold would either wave through
+          # a broken CONUS or fail every small region.
+          case "${{ inputs.region }}" in
+            conus) floor=200000 ;;
+            alaska) floor=40000 ;;
+            caribbean) floor=3000 ;;
+            hawaii) floor=1000 ;;
+            aleutians_west|mariana|samoa) floor=100 ;;
+            *) floor=100 ;;
+          esac
+          [ "$total" -ge "$floor" ] || { echo "only $total tiles for ${{ inputs.region }} (floor $floor)" >&2; exit 1; }
+          # The v2 regressions, plus the v1 Yellowstone hole: all must
+          # exist. These are CONUS tiles; other regions rely on the
+          # per-region floor above and the coverage sentinels run
+          # before dispatch.
+          [ "${{ inputs.region }}" = conus ] || exit 0
           for t in 10/234/429 10/302/366 10/319/363 11/420/742; do
             aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3api head-object \
               --bucket "$BUCKET" --key "vfr/${{ inputs.prefix }}/3x/$t.jxl" >/dev/null \

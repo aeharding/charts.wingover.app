@@ -4,10 +4,17 @@
 # shard's z8-12 pyramid is complete and disjoint.
 import json
 import math
+import os
+import sys
 
 TILE0 = 20037508.342789244
 Z8 = 2 * TILE0 / 256  # z8 tile width in meters
-WEST, EAST = -126.6, -60.6  # full lon range of the charts.txt set
+# Longitude span comes from the region's grid (regions.json): each
+# region tiles its own extent, so one bake covers everything from the
+# Aleutians to Puerto Rico.
+REGION = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("REGION", "conus")
+_grid = json.load(open("/repo/regions.json"))[REGION]["grid"]
+WEST, EAST = _grid[0] - 0.5, _grid[2] + 0.5
 COLS_PER_BAND = 3
 
 def col(lon):

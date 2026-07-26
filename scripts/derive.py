@@ -967,6 +967,7 @@ def detect_frames(chart):
     rgb = gdal.Translate("", src, format="VRT", rgbExpand="rgb")
     a = rgb.ReadAsArray(0, 0, W0, H0, buf_xsize=dw, buf_ysize=dh)
     dark = np.minimum(np.minimum(a[0], a[1]), a[2]) < 150
+    white_px = np.minimum(np.minimum(a[0], a[1]), a[2]) > 235
 
     def longest_run(v):
         best = cur = 0
@@ -1037,13 +1038,31 @@ def detect_frames(chart):
                 for rb in rows_c:
                     if not (MINSIDE < rb - rt < MAXSIDE):
                         continue
-                    if (
+                    if not (
                         solid_h(rb, cl + 4, cr - 4)
                         and solid_v(cl, rt + 4, rb - 4)
                         and solid_v(cr, rt + 4, rb - 4)
                     ):
-                        boxes.append((cl, rt, cr, rb))
-                        break
+                        continue
+                    # DECISIVE TEST: a printed addendum sits on white
+                    # paper. Airspace rectangles (MOAs, restricted
+                    # areas) pass every line test and are surrounded by
+                    # chart — without this the detector produced 3,673
+                    # chops and deleted whole states in the west.
+                    def band_white(sl):
+                        seg = white_px[sl]
+                        return float(seg.mean()) if seg.size > 50 else 1.0
+
+                    sides = (
+                        band_white(np.s_[max(rt - 12, 0) : max(rt - 3, 1), cl:cr]),
+                        band_white(np.s_[rb + 3 : min(rb + 12, dh), cl:cr]),
+                        band_white(np.s_[rt:rb, max(cl - 12, 0) : max(cl - 3, 1)]),
+                        band_white(np.s_[rt:rb, cr + 3 : min(cr + 12, dw)]),
+                    )
+                    if sum(1 for v in sides if v > 0.6) < 3:
+                        continue
+                    boxes.append((cl, rt, cr, rb))
+                    break
     # keep outermost boxes only (a frame often nests scale bars/notes)
     boxes.sort(key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), reverse=True)
     kept = []
@@ -1094,6 +1113,23 @@ def one(chart):
     # summary: overall data bbox + slab count
     xs = [p for poly in polys for p, _ in poly]
     ys = [q for poly in polys for _, q in poly]
+    # Runaway-chopper guard: the hole gate treats chops as intentional
+    # and the seam scanner only looks for thin strips, so nothing else
+    # notices a detector eating real chart.
+    if insets and polys:
+        axs = [p[0] for poly in polys for p in poly]
+        ays = [p[1] for poly in polys for p in poly]
+        sheet_area = (max(axs) - min(axs)) * (max(ays) - min(ays))
+        chop_area = sum(
+            (max(p[0] for p in q) - min(p[0] for p in q))
+            * (max(p[1] for p in q) - min(p[1] for p in q))
+            for q in insets
+        )
+        if sheet_area > 0 and chop_area / sheet_area > 0.3:
+            raise SystemExit(
+                f"{chart}: chops cover {chop_area / sheet_area:.0%} of the sheet "
+                "- a detector is eating real chart; refusing to write"
+            )
     boxes = "".join(
         f"\n    chop [{min(p[0] for p in q):.3f},{min(p[1] for p in q):.3f} .. "
         f"{max(p[0] for p in q):.3f},{max(p[1] for p in q):.3f}]"
