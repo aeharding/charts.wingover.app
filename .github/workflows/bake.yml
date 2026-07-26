@@ -347,7 +347,12 @@ jobs:
         run: |
           ln -s "$PWD" /repo
           CHARTS=$(grep -vE '^\s*(#|$)' charts-${{ inputs.region }}.txt)
-          for c in $CHARTS; do bash scripts/ci-fetch.sh "$c" "${{ inputs.cycle }}"; done
+          # entries contain spaces ("Dir::Tif Stem") and a unit's zip is
+          # named for its DIRECTORY, so strip the ::stem before fetching
+          while IFS= read -r c; do
+            [ -n "$c" ] || continue
+            bash scripts/ci-fetch.sh "$(printf '%s' "$c" | sed 's/::.*//')" "${{ inputs.cycle }}"
+          done <<< "$CHARTS"
           python3 scripts/derive.py
           python3 scripts/finalize.py
           mkdir -p "data/${{ inputs.region }}" && cd "data/${{ inputs.region }}"

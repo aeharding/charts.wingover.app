@@ -11,9 +11,11 @@ CHARTS=$(grep -vE '^\s*(#|$)' /repo/charts.txt)
 # Every listed chart must have a cutline (finalize.py output) BEFORE any
 # work starts — a stale or missing cutline must never silently warp old
 # geometry (the v2 lesson).
-for c in $CHARTS; do
-  [ -f "src/$c/cutline2.geojson" ] || { echo "MISSING cutline2: $c" >&2; exit 1; }
-done
+while IFS= read -r c; do
+  [ -n "$c" ] || continue
+  cut="$(python3 /repo/scripts/unit-env.py "${REGION:-conus}" "$c" | sed -n "s/^CUT=//p" | tr -d "'")"
+  [ -f "$cut" ] || { echo "MISSING cutline: $c" >&2; exit 1; }
+done <<< "$CHARTS"
 
 # Warp at the @3x z12 ground resolution (40075016.686 / (4096 * 768)):
 # one resample from the source LCC scan straight to the finest tile grid.
