@@ -31,7 +31,7 @@ ogr.UseExceptions()
 
 WHITE = 242
 RES = 0.004          # degrees per sample pixel, ~440 m
-MIN_DEG2 = 0.02      # ignore specks
+MIN_DEG2 = float(os.environ.get("MIN_DEG2", "0.02"))  # ignore specks
 
 
 def body(entry, region):
