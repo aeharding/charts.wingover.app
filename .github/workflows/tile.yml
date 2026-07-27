@@ -103,6 +103,8 @@ jobs:
           i=0
           aws configure set retry_mode adaptive
           aws configure set max_attempts 10
+          aws configure set default.s3.max_concurrent_requests 4
+          aws configure set default.s3.multipart_chunksize 16MB
           # A missing .side is normal - not every sheet has overedge. A
           # missing BODY is not: it would drop that sheet from the VRT and
           # leave a hole. --quiet used to hide the difference, so a
@@ -112,13 +114,14 @@ jobs:
             dst=$(printf 'warped/%04d_%s_%s%s.tif' "$i" "$region" "$uid" "${suffix//./_}")
             src="s3://$BUCKET/scratch/$RUN_ID/$region/warped/$uid$suffix.tif"
             ok=0
-            for attempt in 1 2 3; do
+            for attempt in 1 2 3 4 5 6; do
               if aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --only-show-errors "$src" "$dst" 2>/tmp/cperr; then
                 ok=1; break
               fi
               grep -q "Not Found\|does not exist\|404" /tmp/cperr && break
               echo "download attempt $attempt failed for $src; retrying" >&2
-              sleep $((attempt * 10))
+              cat /tmp/cperr >&2
+              sleep $((attempt * 20))
             done
             if [ "$ok" = 1 ]; then
               echo "$dst" >> order.txt
@@ -225,7 +228,10 @@ jobs:
 
   cleanup:
     needs: [tile, overview]
-    if: always()
+    # NOT on tile failure: scratch is the only copy of 59 warps, and
+    # deleting it turns a re-runnable band into a full re-bake. The
+    # bucket's 1-day lifecycle rule clears it if no one re-runs.
+    if: ${{ always() && needs.tile.result != 'failure' }}
     runs-on: ubuntu-latest
     steps:
       - name: Drop scratch
