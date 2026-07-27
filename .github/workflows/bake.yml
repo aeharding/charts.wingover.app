@@ -432,38 +432,17 @@ jobs:
     needs: [tile, overview]
     if: ${{ inputs.dry_run != true }}
     runs-on: ubuntu-latest
+    env:
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
     steps:
-      - name: Count and sentinel tiles
+      - uses: actions/checkout@v7
+      - name: Verify this region shipped tiles
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
-          # NOTE: every region ships into the same prefix, so this is a
-          # whole-product count, not this region's alone. Good enough as
-          # a floor; per-region truth comes from the coverage gate.
-          total=$(aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 ls --recursive \
-            "s3://$BUCKET/vfr/${{ inputs.prefix }}/3x/" | wc -l)
-          echo "shipped tiles: $total"
-          # Per-region floor: CONUS ships ~240k tiles, Samoa a few
-          # hundred. A single global threshold would either wave through
-          # a broken CONUS or fail every small region.
-          case "${{ inputs.region }}" in
-            conus) floor=200000 ;;
-            alaska) floor=40000 ;;
-            caribbean) floor=3000 ;;
-            hawaii) floor=1000 ;;
-            aleutians_west|mariana|samoa) floor=100 ;;
-            *) floor=100 ;;
-          esac
-          [ "$total" -ge "$floor" ] || { echo "only $total tiles for ${{ inputs.region }} (floor $floor)" >&2; exit 1; }
-          # The v2 regressions, plus the v1 Yellowstone hole: all must
-          # exist. These are CONUS tiles; other regions rely on the
-          # per-region floor above and the coverage sentinels run
-          # before dispatch.
-          [ "${{ inputs.region }}" = conus ] || exit 0
-          for t in 10/234/429 10/302/366 10/319/363 11/420/742; do
-            aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3api head-object \
-              --bucket "$BUCKET" --key "vfr/${{ inputs.prefix }}/3x/$t.jxl" >/dev/null \
-              && echo "sentinel OK: $t" || { echo "MISSING sentinel: $t" >&2; exit 1; }
-          done
-
+          # Counts THIS region's own band columns. The old check counted
+          # every object under the shared prefix, so Samoa's floor of 100
+          # was satisfied by CONUS's 240,000 tiles and a region that
+          # shipped nothing still passed.
+          python3 scripts/verify-tiles.py "${{ inputs.region }}" "vfr/${{ inputs.prefix }}"

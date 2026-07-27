@@ -1,0 +1,41 @@
+name: verify prefix
+
+# Check what a published prefix ACTUALLY contains, independently of the
+# bake that produced it. Two bakes have reported success while shipping
+# almost nothing, so "the job was green" is not evidence; this is how to
+# ask the bucket directly.
+on:
+  workflow_dispatch:
+    inputs:
+      prefix:
+        description: Prefix under /vfr/ to check, e.g. 07-09-2026e
+        required: true
+      regions:
+        description: Space-separated regions, or "all"
+        default: all
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      BUCKET: wingover-charts
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_VIRTUAL_HOSTING: "FALSE"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify
+        run: |
+          regions="${{ inputs.regions }}"
+          if [ "$regions" = all ]; then
+            regions=$(python3 -c "import json;print(' '.join(json.load(open('regions.json'))))")
+          fi
+          bad=0
+          for r in $regions; do
+            echo "::group::$r"
+            python3 scripts/verify-tiles.py "$r" "vfr/${{ inputs.prefix }}" || bad=$((bad+1))
+            echo "::endgroup::"
+          done
+          echo "regions failing: $bad"
+          [ "$bad" -eq 0 ]
