@@ -22,7 +22,6 @@ sys.path.insert(0, f"{REPO}/scripts")
 
 import numpy as np  # noqa: E402
 from osgeo import gdal, ogr  # noqa: E402
-from scipy import ndimage  # noqa: E402
 
 import units  # noqa: E402
 
@@ -79,16 +78,36 @@ def main(region, entry):
     a = ds.ReadAsArray()
     white = (a[:3] > WHITE).all(axis=0) & (a[-1] > 0)
 
-    lab, n = ndimage.label(white)
+    # Iterative flood fill, the same way derive.py finds components: the
+    # GDAL container has no scipy, and adding a dependency for one label
+    # pass is not worth it.
+    seen = np.zeros_like(white, dtype=bool)
+    rows, cols = white.shape
     blobs = []
-    for i in range(1, n + 1):
-        ys, xs = np.where(lab == i)
-        area = len(ys) * RES * RES
-        if area < MIN_DEG2:
-            continue
-        bx0, bx1 = x0 + xs.min() * RES, x0 + (xs.max() + 1) * RES
-        by1, by0 = y1 - ys.min() * RES, y1 - (ys.max() + 1) * RES
-        blobs.append((area, bx0, by0, bx1, by1))
+    for r0 in range(rows):
+        for c0 in range(cols):
+            if not white[r0, c0] or seen[r0, c0]:
+                continue
+            stack = [(r0, c0)]
+            seen[r0, c0] = True
+            minr = maxr = r0
+            minc = maxc = c0
+            count = 0
+            while stack:
+                y, x = stack.pop()
+                count += 1
+                minr, maxr = min(minr, y), max(maxr, y)
+                minc, maxc = min(minc, x), max(maxc, x)
+                for yy, xx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+                    if 0 <= yy < rows and 0 <= xx < cols and white[yy, xx] and not seen[yy, xx]:
+                        seen[yy, xx] = True
+                        stack.append((yy, xx))
+            area = count * RES * RES
+            if area < MIN_DEG2:
+                continue
+            bx0, bx1 = x0 + minc * RES, x0 + (maxc + 1) * RES
+            by1, by0 = y1 - minr * RES, y1 - (maxr + 1) * RES
+            blobs.append((area, bx0, by0, bx1, by1))
     blobs.sort(reverse=True)
 
     if not blobs:
