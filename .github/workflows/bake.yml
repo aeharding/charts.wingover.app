@@ -1,20 +1,20 @@
-# Full CONUS bake, sharded across hosted runners:
+# Per-region PREPARE: everything up to and including the warp.
 #
-#   plan ─→ regions (37-way) ─→ cutlines ─→ warp (37-way) ─→ tile (bands) ─→ verify
-#                                                        └──→ overview ──────┘
+#   plan ─→ regions (per sheet) ─→ cutlines ─→ gate ─→ warp (per sheet)
 #
-# fetch:    zips into an actions/cache keyed by cycle — FAA is contacted
-#           once per cycle EVER; all other jobs restore the cache
+# fetch:    zips into an actions/cache keyed by cycle AND region — one
+#           immutable key shared by 8 regions meant 7 of them missed
+#           forever and refetched from FAA every run
 # regions:  extract sheet, derive its data region      (per-sheet artifact)
 # cutlines: merge regions, cross-sheet hole gate, emit cutline2 polygons
-# warp:     fetch sheet again (51 MB, seconds), cutline-cropped warp at
-#           the @3x z12 grid, stage tif to R2 scratch/<run_id>/<region>/
-# tile:     z8-12 per z8-aligned longitude band, VRT over /vsis3/ scratch,
-#           sync straight to the immutable release prefix
-# overview: z0-7 from a downsampled whole-CONUS warp of the same VRT
-# verify:   R2 object count + the sentinel tiles that v2 shipped missing
-#           (Corpus Christi, Montreal, Houlton, Yellowstone), then drop
-#           the scratch prefix.
+# gate:     sheet list, coverage sentinels, area drift, seams, unit names
+# warp:     cutline-cropped warp at the @3x z12 grid, body AND overedge,
+#           staged to R2 scratch/<run_id>/<region>/
+#
+# Tiling is NOT here: it is global (tile.yml), across every region at
+# once. Tile keys carry no region, so per-region tiling had two jobs
+# writing the same keys wherever regions overlap, and a tile the boundary
+# crossed came out half blank whichever job synced last.
 #
 # The release prefix is NEVER an existing one: tiles are cached immutable
 # at the edge and in clients; every bake ships to a fresh prefix and the
@@ -259,190 +259,22 @@ jobs:
             -r cubic -dstalpha -cutline "$CUT" -crop_to_cutline \
             -co COMPRESS=DEFLATE -co TILED=YES -co BIGTIFF=IF_SAFER \
             -multi -wo NUM_THREADS=3 "$VRT" "$UNIT.tif"
-          command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
-          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --quiet \
-            "$UNIT.tif" "s3://$BUCKET/scratch/${{ github.run_id }}/${{ inputs.region }}/warped/$UNIT.tif"
-
-  tile:
-    needs: [plan, warp]
-    runs-on: ubuntu-latest
-    container: ghcr.io/osgeo/gdal:ubuntu-full-latest
-    defaults: { run: { shell: bash } }
-    strategy:
-      fail-fast: false
-      matrix:
-        band: ${{ fromJSON(needs.plan.outputs.bands) }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Tile band z8-12 and ship
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_VIRTUAL_HOSTING: "FALSE"
-          GDAL_NUM_THREADS: ALL_CPUS
-          # Retries for the brief /vsis3/ header reads below; the bulk
-          # pixel data is localized first, precisely because one flaky
-          # ranged read 80 minutes into a streamed encode killed a band.
-          GDAL_HTTP_MAX_RETRY: "8"
-          GDAL_HTTP_RETRY_DELAY: "2"
-          BX0: ${{ matrix.band.x0 }}
-          BX1: ${{ matrix.band.x1 }}
-          RUN_ID: ${{ github.run_id }}
-          REGION: ${{ inputs.region }}
-        run: |
-          export AWS_S3_ENDPOINT="$(echo "${{ secrets.R2_ENDPOINT }}" | sed 's|https://||')"
-          command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
-          # Band membership and Y extent: scripts/bandsel.py, shared with
-          # the local tile dry run so CI and the dry run cannot drift.
-          if ! python3 scripts/bandsel.py "$REGION" "$BX0" "$BX1" \
-               "/vsis3/$BUCKET/scratch/$RUN_ID/$REGION/warped/{uid}.tif"; then
-            echo "no sheets in this band; nothing to tile"
-            exit 0
+          # OVEREDGE strip as well. Only preview.sh used to draw these,
+          # so the QA mosaic and the shipped tiles were built from
+          # different inputs: every seam I signed off on was verified
+          # against a picture the bake could not produce.
+          side="${CUT%.cutline.geojson}.side.geojson"
+          if [ -f "$side" ]; then
+            gdalwarp -q -t_srs EPSG:3857 \
+              -tr 12.7395047141960 12.7395047141960 \
+              -r cubic -dstalpha -cutline "$side" -crop_to_cutline \
+              -co COMPRESS=DEFLATE -co TILED=YES -co BIGTIFF=IF_SAFER \
+              -multi -wo NUM_THREADS=3 "$VRT" "$UNIT.side.tif"
           fi
-          . ./bandy.env
-          echo "band sheets: $(tr '\n' ' ' < fetch.txt)"
-          echo "band Y extent: $BY0 .. $BY1"
-          # Localize the inputs: aws cp retries properly, and the encode
-          # then runs against local disk instead of a 90-minute HTTP stream.
-          mkdir -p warped
-          while IFS= read -r c; do
-            [ -n "$c" ] || continue
+          command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
+          for f in "$UNIT.tif" "$UNIT.side.tif"; do
+            [ -f "$f" ] || continue
             aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --quiet \
-              "s3://$BUCKET/scratch/$RUN_ID/$REGION/warped/$c.tif" "warped/$c.tif"
-          done < fetch.txt
-          gdalbuildvrt -te ${{ matrix.band.x0 }} "$BY0" ${{ matrix.band.x1 }} "$BY1" \
-            band.vrt warped/*.tif
-          gdal raster tile -f JPEGXL \
-            --creation-option LOSSLESS=NO --creation-option DISTANCE=4 --creation-option EFFORT=7 \
-            --tile-size 768 --min-zoom 8 --max-zoom 12 --convention xyz \
-            --resampling cubic --overview-resampling average \
-            --skip-blank --webviewer none band.vrt tiles3x
-          n=$(find tiles3x -name '*.jxl' | wc -l)
-          echo "band ${{ matrix.band.name }}: $n tiles"
-          [ "$n" -gt 0 ] || { echo "band produced ZERO tiles" >&2; exit 1; }
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            echo "DRY RUN: built $n tiles for band ${{ matrix.band.name }}; publishing nothing"
-            exit 0
-          fi
-          command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
-          aws configure set default.s3.max_concurrent_requests 4
-          aws configure set default.s3.max_bandwidth 50MB/s
-          aws configure set retry_mode adaptive
-          aws configure set max_attempts 10
-          # R2 throttles same-prefix PUT bursts; adaptive retries plus a
-          # whole-sync retry loop turn that into slowness, not failure
-          # (a band died at 96% on ServiceUnavailable otherwise).
-          for attempt in 1 2 3 4 5; do
-            if aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 sync --only-show-errors \
-                 --content-type image/jxl --cache-control "public, max-age=31536000, immutable" \
-                 tiles3x/ "s3://$BUCKET/vfr/${{ inputs.prefix }}/3x/"; then
-              break
-            fi
-            echo "sync attempt $attempt failed; retrying"
-            sleep $((attempt * 30))
+              "$f" "s3://$BUCKET/scratch/${{ github.run_id }}/${{ inputs.region }}/warped/$f"
           done
 
-  # Self-contained on purpose: z0-7 needs only ~10x-decimated imagery, so
-  # warping the ORIGINAL scans at the z7 grid (with the same detected
-  # cutlines, re-derived here in seconds per sheet) beats streaming 100GB
-  # of full-res scratch warps through /vsis3/ — the v1 of this job did
-  # exactly that and blew a 1-hour timeout. No needs: runs in parallel
-  # with everything and is dispatchable alone (stages=overview).
-  overview:
-    needs: fetch
-    runs-on: ubuntu-latest
-    container: ghcr.io/osgeo/gdal:ubuntu-full-latest
-    defaults: { run: { shell: bash } }
-    steps:
-      - uses: actions/checkout@v7
-      # actions/cache keys the cache VERSION by compression tool: the
-      # plain-runner fetch job saves with zstd, so the container must
-      # have zstd too or every restore silently misses and refetches
-      # from FAA (observed: 76 misses in run 30145552524).
-      - run: command -v zstd >/dev/null || { apt-get update -qq && apt-get install -y -qq zstd; } >/dev/null
-      - uses: actions/cache/restore@v6
-        with:
-          path: data/zips
-          key: faa-src-${{ inputs.cycle }}-${{ inputs.region }}
-      - name: Extract, derive, low-res warp, tile z0-7
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          GDAL_NUM_THREADS: ALL_CPUS
-          # derive/finalize run here too: without REGION they silently
-          # read the CONUS chart list and fail on 37 missing sheets
-          REGION: ${{ inputs.region }}
-        run: |
-          ln -s "$PWD" /repo
-          CHARTS=$(grep -vE '^\s*(#|$)' charts-${{ inputs.region }}.txt)
-          # entries contain spaces ("Dir::Tif Stem") and a unit's zip is
-          # named for its DIRECTORY, so strip the ::stem before fetching
-          while IFS= read -r c; do
-            [ -n "$c" ] || continue
-            bash scripts/ci-fetch.sh "$(printf '%s' "$c" | sed 's/::.*//')" "${{ inputs.cycle }}"
-          done <<< "$CHARTS"
-          python3 scripts/derive.py
-          python3 scripts/finalize.py
-          mkdir -p "data/${{ inputs.region }}" && cd "data/${{ inputs.region }}"
-          mkdir -p lowres
-          # z7@3x ground resolution — the whole CONUS mosaic is ~13k px wide
-          while IFS= read -r c; do
-            [ -n "$c" ] || continue
-            eval "$(python3 /repo/scripts/unit-env.py "${{ inputs.region }}" "$c")"
-            [ -f "$VRT" ] || gdal_translate -q -of vrt -expand rgb "$TIF" "$VRT"
-            gdalwarp -q -t_srs EPSG:3857 -tr 407.664150854 407.664150854 \
-              -r average -dstalpha -cutline "$CUT" -crop_to_cutline \
-              "$VRT" "lowres/$UNIT.tif"
-          done <<< "$CHARTS"
-          gdalbuildvrt conus-low.vrt lowres/*.tif
-          gdal raster tile -f JPEGXL \
-            --creation-option LOSSLESS=NO --creation-option DISTANCE=4 --creation-option EFFORT=7 \
-            --tile-size 768 --min-zoom 0 --max-zoom 7 --convention xyz \
-            --resampling cubic --overview-resampling average \
-            --skip-blank --webviewer none conus-low.vrt tiles3x
-          n=$(find tiles3x -name '*.jxl' | wc -l)
-          echo "overview: $n tiles"
-          [ "$n" -gt 0 ] || { echo "overview produced ZERO tiles" >&2; exit 1; }
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            echo "DRY RUN: publishing nothing"
-            exit 0
-          fi
-          command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
-          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 sync --only-show-errors \
-            --content-type image/jxl --cache-control "public, max-age=31536000, immutable" \
-            tiles3x/ "s3://$BUCKET/vfr/${{ inputs.prefix }}/3x/"
-
-  # Runs even when the bake fails: verify only runs on success, so a
-  # failed run used to leak ~100 GB of staged warps until the bucket
-  # lifecycle rule swept them.
-  cleanup:
-    needs: [tile, overview]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Drop scratch
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: |
-          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 rm --recursive --only-show-errors \
-            "s3://$BUCKET/scratch/${{ github.run_id }}/${{ inputs.region }}/" || true
-
-  verify:
-    needs: [tile, overview]
-    if: ${{ inputs.dry_run != true }}
-    runs-on: ubuntu-latest
-    env:
-      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Verify this region shipped tiles
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        run: |
-          # Counts THIS region's own band columns. The old check counted
-          # every object under the shared prefix, so Samoa's floor of 100
-          # was satisfied by CONUS's 240,000 tiles and a region that
-          # shipped nothing still passed.
-          python3 scripts/verify-tiles.py "${{ inputs.region }}" "vfr/${{ inputs.prefix }}"

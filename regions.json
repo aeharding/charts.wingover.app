@@ -44,7 +44,8 @@
    "Twin_Cities",
    "Washington",
    "Wichita"
-  ]
+  ],
+  "priority": 10
  },
  "alaska": {
   "grid": [
@@ -69,7 +70,8 @@
    "Point_Barrow",
    "Seward"
   ],
-  "note": "14 mainland sheets. Western Aleutians East is EXCLUDED: despite FAA's East/West split it still straddles the antimeridian (177E..-172W), which one web-mercator warp cannot express; its unique area past Attu is open ocean. TODO: split that scan at 180 into two units to recover it."
+  "note": "14 mainland sheets. Western Aleutians East is EXCLUDED: despite FAA's East/West split it still straddles the antimeridian (177E..-172W), which one web-mercator warp cannot express; its unique area past Attu is open ocean. TODO: split that scan at 180 into two units to recover it.",
+  "priority": 10
  },
  "hawaii": {
   "grid": [
@@ -81,7 +83,8 @@
   "charts": [
    "Hawaiian_Islands::Hawaiian Islands SEC",
    "Hawaiian_Islands::Honolulu Inset SEC"
-  ]
+  ],
+  "priority": 10
  },
  "caribbean": {
   "grid": [
@@ -94,10 +97,8 @@
    "Caribbean_1_VFR",
    "Caribbean_2_VFR"
   ],
-  "note": "Separate FAA product line (visual/<cycle>/Caribbean/), not sectional-files. Puerto Rico + Virgin Islands + Lesser Antilles at 1:1M. CONUS sectionals (1:500k) outrank it over south Florida; see scripts/make-yield.py.",
-  "yields_to": [
-   "conus"
-  ]
+  "note": "Separate FAA product line (visual/<cycle>/Caribbean/), not sectional-files. Puerto Rico + Virgin Islands + Lesser Antilles at 1:1M. Overlaps CONUS over south Florida; priority makes CONUS win there.",
+  "priority": 5
  },
  "aleutians_west": {
   "grid": [
@@ -118,7 +119,8 @@
     180.0,
     53.35
    ]
-  }
+  },
+  "priority": 10
  },
  "mariana": {
   "grid": [
@@ -130,7 +132,8 @@
   "charts": [
    "Hawaiian_Islands::Mariana Islands Inset SEC"
   ],
-  "note": "Shipped inside the Hawaiian Islands zip as its own georeferenced scan."
+  "note": "Shipped inside the Hawaiian Islands zip as its own georeferenced scan.",
+  "priority": 10
  },
  "samoa": {
   "grid": [
@@ -142,7 +145,8 @@
   "charts": [
    "Hawaiian_Islands::Samoan Islands Inset SEC"
   ],
-  "note": "Shipped inside the Hawaiian Islands zip as its own georeferenced scan."
+  "note": "Shipped inside the Hawaiian Islands zip as its own georeferenced scan.",
+  "priority": 10
  },
  "aleutians_far": {
   "grid": [
@@ -162,6 +166,7 @@
     53.35
    ]
   },
-  "note": "The Western Aleutians East scan west of the antimeridian: Adak (PADK), Atka."
+  "note": "The Western Aleutians East scan west of the antimeridian: Adak (PADK), Atka.",
+  "priority": 10
  }
 }

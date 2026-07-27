@@ -1,0 +1,238 @@
+# GLOBAL tiling: every region at once, after all of them have prepared.
+#
+#   plan ─→ tile (per z8 band, all regions) ─→ verify
+#       └─→ overview (z0-7) ─────────────────┘
+#                                            └─→ cleanup (always)
+#
+# Why global rather than per region: a tile key is z/x/y with no region
+# in it. When each region tiled itself, two regions charting the same
+# ground (CONUS sectionals and the Caribbean VFR both cover south
+# Florida) had two jobs writing the SAME keys, and whichever synced last
+# won. Worse, a tile the region boundary crossed came out half blank
+# either way, since each job could only fill its own side. Building each
+# tile once, from every sheet that touches it, removes the race and the
+# half-blank row, and lets precedence be what it should be: draw order.
+#
+# Draw order comes from scripts/bandsel.py: overedge strips first, then
+# bodies, each by region priority (regions.json). That is the same
+# arbitration that closed the Matinicus seam, now applied across regions.
+name: tile
+on:
+  workflow_call:
+    inputs:
+      cycle:
+        type: string
+        default: 07-09-2026
+      prefix:
+        type: string
+        required: true
+      dry_run:
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      cycle:
+        description: FAA cycle (MM-DD-YYYY)
+        default: 07-09-2026
+      prefix:
+        description: Release prefix under /vfr/ (MUST be new)
+        required: true
+      dry_run:
+        description: run every stage but publish nothing
+        type: boolean
+        default: false
+
+env:
+  BUCKET: wingover-charts
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      bands: ${{ steps.p.outputs.bands }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: p
+        run: |
+          bands=$(python3 scripts/bands.py all)
+          # An empty matrix silently skips every tile job. That once
+          # shipped a bake of 56 overview tiles and reported success.
+          [ "$(printf '%s' "$bands" | jq 'length')" -gt 0 ] || { echo "empty band list" >&2; exit 1; }
+          echo "bands=$bands" >> "$GITHUB_OUTPUT"
+          echo "$(printf '%s' "$bands" | jq 'length') bands"
+
+  tile:
+    needs: plan
+    runs-on: ubuntu-latest
+    container: ghcr.io/osgeo/gdal:ubuntu-full-latest
+    defaults: { run: { shell: bash } }
+    strategy:
+      fail-fast: false
+      matrix:
+        band: ${{ fromJSON(needs.plan.outputs.bands) }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_VIRTUAL_HOSTING: "FALSE"
+      GDAL_NUM_THREADS: ALL_CPUS
+      GDAL_HTTP_MAX_RETRY: "8"
+      GDAL_HTTP_RETRY_DELAY: "2"
+      BX0: ${{ matrix.band.x0 }}
+      BX1: ${{ matrix.band.x1 }}
+      RUN_ID: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Tile band ${{ matrix.band.name }}
+        run: |
+          export AWS_S3_ENDPOINT="$(echo "${{ secrets.R2_ENDPOINT }}" | sed 's|https://||')"
+          command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
+          # Membership, Y extent and DRAW ORDER, across every region.
+          if ! python3 scripts/bandsel.py all "$BX0" "$BX1" \
+               "/vsis3/$BUCKET/scratch/$RUN_ID/{region}/warped/{uid}{suffix}.tif"; then
+            echo "no sheets in this band; nothing to tile"
+            exit 0
+          fi
+          . ./bandy.env
+          echo "band Y extent: $BY0 .. $BY1"
+          # Localize in draw order. aws cp retries properly, and the
+          # encode then runs against local disk instead of a 90-minute
+          # HTTP stream. A missing .side is normal: not every sheet has
+          # overedge, so a 404 there just means nothing to underlay.
+          mkdir -p warped
+          : > order.txt
+          i=0
+          while IFS=$'\t' read -r region uid suffix; do
+            [ -n "$uid" ] || continue
+            dst=$(printf 'warped/%04d_%s_%s%s.tif' "$i" "$region" "$uid" "${suffix//./_}")
+            if aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --quiet \
+                 "s3://$BUCKET/scratch/$RUN_ID/$region/warped/$uid$suffix.tif" "$dst"; then
+              echo "$dst" >> order.txt
+              i=$((i+1))
+            fi
+          done < fetch.txt
+          echo "band ${{ matrix.band.name }}: $(wc -l < order.txt) rasters in draw order"
+          [ -s order.txt ] || { echo "nothing downloaded for this band" >&2; exit 1; }
+          # -input_file_list keeps the ORDER: later wins, so bodies land
+          # on top of overedge and higher-priority regions on top of lower.
+          gdalbuildvrt -te ${{ matrix.band.x0 }} "$BY0" ${{ matrix.band.x1 }} "$BY1" \
+            -input_file_list order.txt band.vrt
+          gdal raster tile -f JPEGXL \
+            --creation-option LOSSLESS=NO --creation-option DISTANCE=4 --creation-option EFFORT=7 \
+            --tile-size 768 --min-zoom 8 --max-zoom 12 --convention xyz \
+            --resampling cubic --overview-resampling average \
+            --skip-blank --webviewer none band.vrt tiles3x
+          n=$(find tiles3x -name '*.jxl' | wc -l)
+          echo "band ${{ matrix.band.name }}: $n tiles"
+          [ "$n" -gt 0 ] || { echo "band produced ZERO tiles" >&2; exit 1; }
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "DRY RUN: built $n tiles for band ${{ matrix.band.name }}; publishing nothing"
+            exit 0
+          fi
+          aws configure set default.s3.max_concurrent_requests 4
+          aws configure set default.s3.max_bandwidth 50MB/s
+          aws configure set retry_mode adaptive
+          aws configure set max_attempts 10
+          # R2 throttles same-prefix PUT bursts; adaptive retries plus a
+          # whole-sync retry loop turn that into slowness, not failure.
+          for attempt in 1 2 3 4 5; do
+            if aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 sync --only-show-errors \
+                 --content-type image/jxl --cache-control "public, max-age=31536000, immutable" \
+                 tiles3x/ "s3://$BUCKET/vfr/${{ inputs.prefix }}/3x/"; then
+              break
+            fi
+            echo "sync attempt $attempt failed; retrying"
+            sleep $((attempt * 30))
+          done
+
+  overview:
+    runs-on: ubuntu-latest
+    container: ghcr.io/osgeo/gdal:ubuntu-full-latest
+    defaults: { run: { shell: bash } }
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_VIRTUAL_HOSTING: "FALSE"
+      GDAL_NUM_THREADS: ALL_CPUS
+      RUN_ID: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: z0-7 from every region
+        run: |
+          export AWS_S3_ENDPOINT="$(echo "${{ secrets.R2_ENDPOINT }}" | sed 's|https://||')"
+          command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
+          # z0-7 spans the whole product, so take the whole world as the
+          # band and let bandsel order it the same way.
+          python3 scripts/bandsel.py all -20037508.35 20037508.35 \
+            "/vsis3/$BUCKET/scratch/$RUN_ID/{region}/warped/{uid}{suffix}.tif"
+          . ./bandy.env
+          : > order.txt
+          while IFS=$'\t' read -r region uid suffix; do
+            [ -n "$uid" ] || continue
+            echo "/vsis3/$BUCKET/scratch/$RUN_ID/$region/warped/$uid$suffix.tif" >> order.txt
+          done < fetch.txt
+          # Read straight from /vsis3 here: z0-7 downsamples hard, so the
+          # bytes pulled are a fraction of a full-res localize.
+          python3 - <<'PY'
+          import subprocess
+          keep = []
+          for line in open("order.txt"):
+              p = line.strip()
+              if p and subprocess.run(["gdalinfo", p], capture_output=True).returncode == 0:
+                  keep.append(p)
+          open("order.txt", "w").write("\n".join(keep) + "\n")
+          print(len(keep), "rasters readable")
+          PY
+          gdalbuildvrt -input_file_list order.txt world.vrt
+          gdal raster tile -f JPEGXL \
+            --creation-option LOSSLESS=NO --creation-option DISTANCE=4 --creation-option EFFORT=7 \
+            --tile-size 768 --min-zoom 0 --max-zoom 7 --convention xyz \
+            --resampling cubic --overview-resampling average \
+            --skip-blank --webviewer none world.vrt tiles3x
+          n=$(find tiles3x -name '*.jxl' | wc -l)
+          echo "overview: $n tiles"
+          [ "$n" -gt 0 ] || { echo "overview produced ZERO tiles" >&2; exit 1; }
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "DRY RUN: publishing nothing"
+            exit 0
+          fi
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 sync --only-show-errors \
+            --content-type image/jxl --cache-control "public, max-age=31536000, immutable" \
+            tiles3x/ "s3://$BUCKET/vfr/${{ inputs.prefix }}/3x/"
+
+  cleanup:
+    needs: [tile, overview]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Drop scratch
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          # One global tiler means one cleanup, and it can safely drop the
+          # whole run. Per-region cleanup used to delete the shared prefix
+          # while other regions were still tiling from it.
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 rm --recursive --only-show-errors \
+            "s3://$BUCKET/scratch/${{ github.run_id }}/" || true
+
+  verify:
+    needs: [tile, overview]
+    if: ${{ inputs.dry_run != true }}
+    runs-on: ubuntu-latest
+    env:
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_VIRTUAL_HOSTING: "FALSE"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Every region shipped tiles
+        run: |
+          bad=0
+          for r in $(python3 -c "import json;print(' '.join(json.load(open('regions.json'))))"); do
+            echo "::group::$r"
+            python3 scripts/verify-tiles.py "$r" "vfr/${{ inputs.prefix }}" || bad=$((bad+1))
+            echo "::endgroup::"
+          done
+          echo "regions failing: $bad"
+          [ "$bad" -eq 0 ]

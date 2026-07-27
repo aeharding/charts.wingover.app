@@ -1,11 +1,20 @@
 # Bake EVERY VFR region in one dispatch — the whole product, the way
-# 1800wxbrief publishes it: CONUS, Alaska, the western Aleutians,
-# Hawaii, the Marianas, Samoa and the Caribbean (Puerto Rico + VI).
+# 1800wxbrief publishes it: CONUS, Alaska, both Aleutian halves, Hawaii,
+# the Marianas, Samoa and the Caribbean (Puerto Rico + VI).
 #
-# Each region runs the full bake pipeline in parallel and ships into the
-# SAME tile prefix; regions do not overlap geographically, so their
-# pyramids simply coexist. fail-fast is off: one region failing must not
-# discard the others' work.
+#   prepare (8 regions, parallel) ──→ tile (global, all regions at once)
+#
+# Regions prepare in parallel and independently: fetch, derive cutlines,
+# gate, and warp their sheets to R2 scratch. fail-fast is off so one
+# region failing does not discard the others' work.
+#
+# Tiling then runs ONCE across every region. It is not per region because
+# a tile key is z/x/y with no region in it: CONUS and the Caribbean both
+# chart south Florida, so per-region tiling had two jobs writing the same
+# keys, and a tile the boundary crossed came out half blank whichever
+# synced last. One global pass builds each tile from every sheet that
+# touches it, with precedence decided by draw order (regions.json
+# priority), the same arbitration that closed the Matinicus seam.
 name: bake-all
 on:
   workflow_dispatch:
@@ -15,14 +24,14 @@ on:
         default: 07-09-2026
       prefix:
         description: Release prefix under /vfr/ (MUST be new)
-        default: 07-09-2026h
+        default: 07-09-2026i
       dry_run:
         description: run every stage but publish nothing
         type: boolean
         default: false
 
 jobs:
-  region:
+  prepare:
     strategy:
       fail-fast: false
       matrix:
@@ -41,5 +50,16 @@ jobs:
       prefix: ${{ inputs.prefix }}
       stages: all
       region: ${{ matrix.region }}
+      dry_run: ${{ inputs.dry_run }}
+    secrets: inherit
+
+  tile:
+    # EVERY region must have staged its warps first: the global tiler
+    # reads all of them out of one scratch prefix.
+    needs: prepare
+    uses: ./.github/workflows/tile.yml
+    with:
+      cycle: ${{ inputs.cycle }}
+      prefix: ${{ inputs.prefix }}
       dry_run: ${{ inputs.dry_run }}
     secrets: inherit
