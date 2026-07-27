@@ -25,10 +25,16 @@ while IFS=$'\t' read -r uid tif vrt cut; do
     -multi -wo NUM_THREADS=3 "$vrt" "warped/$uid.tif"
 done < units.tsv
 
+python3 /repo/scripts/bands.py "$REGION" \
+  | python3 -c 'import json,sys
+for b in json.load(sys.stdin):
+    print(b["name"], b["x0"], b["x1"])' > bands.txt
+nbands=$(wc -l < bands.txt)
+echo "$REGION: $nbands bands"
+[ "$nbands" -gt 0 ] || { echo "region produced ZERO bands" >&2; exit 1; }
+
 total=0
-for band in $(python3 /repo/scripts/bands.py "$REGION" | python3 -c \
-    'import json,sys; print("\n".join(f"{b[\"name\"]}:{b[\"x0\"]}:{b[\"x1\"]}" for b in json.load(sys.stdin)))'); do
-  name="${band%%:*}"; rest="${band#*:}"; x0="${rest%%:*}"; x1="${rest#*:}"
+while read -r name x0 x1; do
   python3 /repo/scripts/bandsel.py "$REGION" "$x0" "$x1" 'warped/{uid}.tif'
   . ./bandy.env
   rm -rf tiles3x
@@ -42,5 +48,6 @@ for band in $(python3 /repo/scripts/bands.py "$REGION" | python3 -c \
   echo "band $name: $n tiles"
   [ "$n" -gt 0 ] || { echo "band $name produced ZERO tiles" >&2; exit 1; }
   total=$((total + n))
-done
-echo "TILE DRY RUN OK ($REGION): $total tiles across all bands"
+done < bands.txt
+[ "$total" -gt 0 ] || { echo "ZERO tiles overall" >&2; exit 1; }
+echo "TILE DRY RUN OK ($REGION): $total tiles across $nbands bands"
