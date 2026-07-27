@@ -271,10 +271,22 @@ jobs:
               -co COMPRESS=DEFLATE -co TILED=YES -co BIGTIFF=IF_SAFER \
               -multi -wo NUM_THREADS=3 "$VRT" "$UNIT.side.tif"
           fi
+          # LOW-RES copies for the global z0-7 overview. The overview
+          # cannot downsample the full-res warps: they carry no overviews,
+          # so reading the whole product at z7 would stream ~170 GB. These
+          # are the z7@3x grid, a few MB each, and staging them here keeps
+          # the overview job to one cheap download.
+          for src in "$UNIT.tif" "$UNIT.side.tif"; do
+            [ -f "$src" ] || continue
+            gdalwarp -q -tr 407.664150854 407.664150854 -r average \
+              -co COMPRESS=DEFLATE -co TILED=YES "$src" "low_$src"
+          done
           command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
           for f in "$UNIT.tif" "$UNIT.side.tif"; do
             [ -f "$f" ] || continue
             aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --quiet \
               "$f" "s3://$BUCKET/scratch/${{ github.run_id }}/${{ inputs.region }}/warped/$f"
+            aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --quiet \
+              "low_$f" "s3://$BUCKET/scratch/${{ github.run_id }}/${{ inputs.region }}/lowres/$f"
           done
 

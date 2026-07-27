@@ -161,27 +161,26 @@ jobs:
           export AWS_S3_ENDPOINT="$(echo "${{ secrets.R2_ENDPOINT }}" | sed 's|https://||')"
           command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
           # z0-7 spans the whole product, so take the whole world as the
-          # band and let bandsel order it the same way.
+          # band and let bandsel order it exactly as the z8-12 bands are.
           python3 scripts/bandsel.py all -20037508.35 20037508.35 \
-            "/vsis3/$BUCKET/scratch/$RUN_ID/{region}/warped/{uid}{suffix}.tif"
-          . ./bandy.env
+            "/vsis3/$BUCKET/scratch/$RUN_ID/{region}/lowres/{uid}{suffix}.tif"
+          # The LOW-RES copies warp staged, not the full-res ones: those
+          # have no overviews, so downsampling the whole product to z7
+          # would stream ~170 GB.
+          mkdir -p lowres
           : > order.txt
+          i=0
           while IFS=$'\t' read -r region uid suffix; do
             [ -n "$uid" ] || continue
-            echo "/vsis3/$BUCKET/scratch/$RUN_ID/$region/warped/$uid$suffix.tif" >> order.txt
+            dst=$(printf 'lowres/%04d_%s_%s%s.tif' "$i" "$region" "$uid" "${suffix//./_}")
+            if aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --quiet \
+                 "s3://$BUCKET/scratch/$RUN_ID/$region/lowres/$uid$suffix.tif" "$dst"; then
+              echo "$dst" >> order.txt
+              i=$((i+1))
+            fi
           done < fetch.txt
-          # Read straight from /vsis3 here: z0-7 downsamples hard, so the
-          # bytes pulled are a fraction of a full-res localize.
-          python3 - <<'PY'
-          import subprocess
-          keep = []
-          for line in open("order.txt"):
-              p = line.strip()
-              if p and subprocess.run(["gdalinfo", p], capture_output=True).returncode == 0:
-                  keep.append(p)
-          open("order.txt", "w").write("\n".join(keep) + "\n")
-          print(len(keep), "rasters readable")
-          PY
+          echo "overview: $(wc -l < order.txt) rasters in draw order"
+          [ -s order.txt ] || { echo "nothing downloaded for the overview" >&2; exit 1; }
           gdalbuildvrt -input_file_list order.txt world.vrt
           gdal raster tile -f JPEGXL \
             --creation-option LOSSLESS=NO --creation-option DISTANCE=4 --creation-option EFFORT=7 \
@@ -217,7 +216,7 @@ jobs:
 
   verify:
     needs: [tile, overview]
-    if: ${{ inputs.dry_run != true }}
+    if: ${{ success() && inputs.dry_run != true }}
     runs-on: ubuntu-latest
     env:
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
