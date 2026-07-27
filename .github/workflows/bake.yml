@@ -97,9 +97,18 @@ jobs:
           key: faa-src-${{ inputs.cycle }}-${{ inputs.region }}
       - if: steps.zips.outputs.cache-hit != 'true'
         run: |
-          for c in $(grep -vE '^\s*(#|$)' charts-${{ inputs.region }}.txt); do
-            bash scripts/ci-fetch.sh "$(echo "$c" | sed 's/::.*//')" "${{ inputs.cycle }}"
-          done
+          # LINE BY LINE, like every other consumer of a chart list:
+          # entries are "Dir::Tif Stem", so word splitting turns one sheet
+          # into five bogus ones. This was masked until the cache key was
+          # region-scoped, because these regions used to get another
+          # region's cache hit and skip the step entirely.
+          # sort -u because several units share one zip (the Hawaiian
+          # Islands sheet carries four).
+          grep -vE '^\s*(#|$)' charts-${{ inputs.region }}.txt | sed 's/::.*//' | sort -u \
+            | while IFS= read -r c; do
+                [ -n "$c" ] || continue
+                bash scripts/ci-fetch.sh "$c" "${{ inputs.cycle }}"
+              done
 
   regions:
     if: ${{ inputs.stages == 'all' }}
@@ -296,10 +305,11 @@ jobs:
           # Localize the inputs: aws cp retries properly, and the encode
           # then runs against local disk instead of a 90-minute HTTP stream.
           mkdir -p warped
-          for c in $(cat fetch.txt); do
+          while IFS= read -r c; do
+            [ -n "$c" ] || continue
             aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --quiet \
               "s3://$BUCKET/scratch/$RUN_ID/$REGION/warped/$c.tif" "warped/$c.tif"
-          done
+          done < fetch.txt
           gdalbuildvrt -te ${{ matrix.band.x0 }} "$BY0" ${{ matrix.band.x1 }} "$BY1" \
             band.vrt warped/*.tif
           gdal raster tile -f JPEGXL \
