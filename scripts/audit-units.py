@@ -59,11 +59,16 @@ def res_m(entry, region):
     return abs(gdal.Open(tif).GetGeoTransform()[1])
 
 
-def edge_whiteness(entry, region):
-    """Fraction of near-white pixels in a band inside each cutline edge.
+def edge_whiteness(entry, region, others):
+    """Fraction of near-white pixels in a band inside each cutline edge,
+    measured ONLY where no other unit covers the same ground.
 
     A printed margin is paper: nearly all white. Real chart, even open
-    ocean, is tinted. Returns the worst edge.
+    ocean, is tinted. But almost every interior sheet edge carries a
+    "Joins <neighbour>" ruler inside its body cutline, and the neighbour
+    draws over it, so that is by design and invisible. What matters is
+    furniture nothing covers: San Francisco's elevation legend sits in
+    the Pacific with no neighbour, so it lands on the map.
     """
     tif, vrt, cut = units.unit_paths(entry, region)
     if not (os.path.exists(tif) and os.path.exists(cut)):
@@ -71,10 +76,22 @@ def edge_whiteness(entry, region):
     if not os.path.exists(vrt):
         gdal.Translate(vrt, tif, format="VRT", rgbExpand="rgb")
     g = body(entry, region)
+    for o in others:
+        g = g.Difference(o)
+        if g is None or g.IsEmpty():
+            return None
     x0, x1, y0, y1 = g.GetEnvelope()
     # ~1200 m in degrees, latitude-corrected
     dy = EDGE_M / 111320.0
     dx = dy / max(0.2, np.cos(np.radians((y0 + y1) / 2)))
+    gdal.FileFromMemBuffer(
+        "/vsimem/exposed.geojson",
+        json.dumps({
+            "type": "FeatureCollection",
+            "features": [{"type": "Feature", "properties": {},
+                          "geometry": json.loads(g.ExportToJson())}],
+        }),
+    )
     worst = None
     for name, win in (
         ("S", (x0, y0, x1, y0 + dy)),
@@ -88,7 +105,7 @@ def edge_whiteness(entry, region):
                 "", vrt, format="MEM", dstSRS="EPSG:4326",
                 outputBounds=(wx0, wy0, wx1, wy1),
                 width=400, height=400, resampleAlg="average",
-                dstAlpha=True, cutlineDSName=cut,
+                dstAlpha=True, cutlineDSName="/vsimem/exposed.geojson",
             )
         except RuntimeError:
             continue
@@ -141,18 +158,21 @@ def main(regions):
         rs = {e: v for e, v in rs.items() if v}
         if len(rs) < 2:
             continue
-        med = float(np.median(list(rs.values())))
+        areas = {e: (geoms[(r, e)].GetArea() if (r, e) in geoms else 0) for e in rs}
+        main = max(areas, key=areas.get)
+        norm = rs[main]
         for e, v in rs.items():
-            if abs(v - med) / med > SCALE_TOL:
+            if e != main and abs(v - norm) / norm > SCALE_TOL:
                 problems.append(
                     f"SCALE      {r}/{e}\n"
-                    f"           {v:.1f} m/px vs region median {med:.1f} "
-                    f"({v / med:.2f}x)"
+                    f"           {v:.1f} m/px vs {main} at {norm:.1f} "
+                    f"({v / norm:.2f}x)"
                 )
 
     # FURNITURE: white band inside a cutline edge
     for r, e in allunits:
-        w = edge_whiteness(e, r)
+        others = [g for k, g in geoms.items() if k != (r, e)]
+        w = edge_whiteness(e, r, others)
         if w and w[1] >= FURNITURE_FRAC:
             problems.append(
                 f"FURNITURE  {r}/{e}\n"
