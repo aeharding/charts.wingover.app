@@ -8,7 +8,7 @@
 # regions:  extract sheet, derive its data region      (per-sheet artifact)
 # cutlines: merge regions, cross-sheet hole gate, emit cutline2 polygons
 # warp:     fetch sheet again (51 MB, seconds), cutline-cropped warp at
-#           the @3x z12 grid, stage tif to R2 scratch/<run_id>/
+#           the @3x z12 grid, stage tif to R2 scratch/<run_id>/<region>/
 # tile:     z8-12 per z8-aligned longitude band, VRT over /vsis3/ scratch,
 #           sync straight to the immutable release prefix
 # overview: z0-7 from a downsampled whole-CONUS warp of the same VRT
@@ -94,7 +94,7 @@ jobs:
         id: zips
         with:
           path: data/zips
-          key: faa-src-${{ inputs.cycle }}
+          key: faa-src-${{ inputs.cycle }}-${{ inputs.region }}
       - if: steps.zips.outputs.cache-hit != 'true'
         run: |
           for c in $(grep -vE '^\s*(#|$)' charts-${{ inputs.region }}.txt); do
@@ -121,7 +121,7 @@ jobs:
       - uses: actions/cache/restore@v6
         with:
           path: data/zips
-          key: faa-src-${{ inputs.cycle }}
+          key: faa-src-${{ inputs.cycle }}-${{ inputs.region }}
       - name: Extract and derive
         env:
           REGION: ${{ inputs.region }}
@@ -183,7 +183,7 @@ jobs:
       - uses: actions/cache/restore@v6
         with:
           path: data/zips
-          key: faa-src-${{ inputs.cycle }}
+          key: faa-src-${{ inputs.cycle }}-${{ inputs.region }}
       - uses: actions/download-artifact@v8
         with:
           name: cutlines-${{ inputs.region }}
@@ -234,7 +234,7 @@ jobs:
       - uses: actions/cache/restore@v6
         with:
           path: data/zips
-          key: faa-src-${{ inputs.cycle }}
+          key: faa-src-${{ inputs.cycle }}-${{ inputs.region }}
       - name: Extract, warp, stage
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -252,7 +252,7 @@ jobs:
             -multi -wo NUM_THREADS=3 "$VRT" "$UNIT.tif"
           command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
           aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --quiet \
-            "$UNIT.tif" "s3://$BUCKET/scratch/${{ github.run_id }}/warped/$UNIT.tif"
+            "$UNIT.tif" "s3://$BUCKET/scratch/${{ github.run_id }}/${{ inputs.region }}/warped/$UNIT.tif"
 
   tile:
     needs: [plan, warp]
@@ -285,8 +285,11 @@ jobs:
           command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
           # Band membership and Y extent: scripts/bandsel.py, shared with
           # the local tile dry run so CI and the dry run cannot drift.
-          python3 scripts/bandsel.py "$REGION" "$BX0" "$BX1" \
-            "/vsis3/$BUCKET/scratch/$RUN_ID/warped/{uid}.tif"
+          if ! python3 scripts/bandsel.py "$REGION" "$BX0" "$BX1" \
+               "/vsis3/$BUCKET/scratch/$RUN_ID/$REGION/warped/{uid}.tif"; then
+            echo "no sheets in this band; nothing to tile"
+            exit 0
+          fi
           . ./bandy.env
           echo "band sheets: $(tr '\n' ' ' < fetch.txt)"
           echo "band Y extent: $BY0 .. $BY1"
@@ -295,7 +298,7 @@ jobs:
           mkdir -p warped
           for c in $(cat fetch.txt); do
             aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --quiet \
-              "s3://$BUCKET/scratch/$RUN_ID/warped/$c.tif" "warped/$c.tif"
+              "s3://$BUCKET/scratch/$RUN_ID/$REGION/warped/$c.tif" "warped/$c.tif"
           done
           gdalbuildvrt -te ${{ matrix.band.x0 }} "$BY0" ${{ matrix.band.x1 }} "$BY1" \
             band.vrt warped/*.tif
@@ -350,7 +353,7 @@ jobs:
       - uses: actions/cache/restore@v6
         with:
           path: data/zips
-          key: faa-src-${{ inputs.cycle }}
+          key: faa-src-${{ inputs.cycle }}-${{ inputs.region }}
       - name: Extract, derive, low-res warp, tile z0-7
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -413,7 +416,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
         run: |
           aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 rm --recursive --only-show-errors \
-            "s3://$BUCKET/scratch/${{ github.run_id }}/" || true
+            "s3://$BUCKET/scratch/${{ github.run_id }}/${{ inputs.region }}/" || true
 
   verify:
     needs: [tile, overview]

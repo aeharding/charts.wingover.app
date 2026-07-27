@@ -35,7 +35,10 @@ echo "$REGION: $nbands bands"
 
 total=0
 while read -r name x0 x1; do
-  python3 /repo/scripts/bandsel.py "$REGION" "$x0" "$x1" 'warped/{uid}.tif'
+  if ! python3 /repo/scripts/bandsel.py "$REGION" "$x0" "$x1" 'warped/{uid}.tif'; then
+    echo "band $name: no sheets, skipping"
+    continue
+  fi
   . ./bandy.env
   rm -rf tiles3x
   gdalbuildvrt -q -te "$x0" "$BY0" "$x1" "$BY1" band.vrt $(sed 's|^|warped/|; s|$|.tif|' fetch.txt)
