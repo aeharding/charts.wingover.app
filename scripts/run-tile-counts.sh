@@ -19,10 +19,10 @@ gh run view "$RUN" --json jobs \
     gh api "repos/$REPO/actions/jobs/$jid/logs" 2>/dev/null \
       | grep -oE "(band [a-zA-Z0-9-]+|overview): [0-9]+ tiles" || true
   done \
-| sed -E 's/.*(band [a-zA-Z0-9-]+|overview): ([0-9]+) tiles/\1 \2/' \
+| sed -E 's/.*band ([a-zA-Z0-9-]+): ([0-9]+) tiles/\1 \2/; s/.*overview: ([0-9]+) tiles/overview \1/' \
 | sort -u \
-| awk '{n[$1]=$NF} END {
+| awk '{n[$1]=$2} END {
     t=0; for (b in n) { printf "  %-12s %8d\n", b, n[b]; t+=n[b] }
-    printf "  %-12s %8d\n", "TOTAL", t
+    printf "  %-12s %8d  (%d entries)\n", "TOTAL", t, length(n)
   }' \
 | sort
