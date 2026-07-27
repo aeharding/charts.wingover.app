@@ -1,26 +1,26 @@
 {
   "alaska": {
     "Anchorage": 47.459957,
-    "Bethel": 55.775261,
+    "Bethel": 55.187609,
     "Cape_Lisburne": 65.760766,
     "Cold_Bay": 22.541223,
     "Dawson": 57.677067,
-    "Dutch_Harbor": 37.957024,
+    "Dutch_Harbor": 35.349452,
     "Fairbanks": 57.697557,
-    "Juneau": 44.162577,
-    "Ketchikan": 39.852626,
-    "Kodiak": 46.804461,
+    "Juneau": 36.369014,
+    "Ketchikan": 37.324158,
+    "Kodiak": 43.928418,
     "McGrath": 48.818133,
-    "Nome": 59.973883,
-    "Point_Barrow": 72.006771,
-    "Seward": 28.293442
+    "Nome": 57.332462,
+    "Point_Barrow": 71.548236,
+    "Seward": 27.212689
   },
   "aleutians_far": {
     "Western_Aleutian_Islands::Western Aleutian Islands East SEC": 16.358088
   },
   "aleutians_west": {
     "Western_Aleutian_Islands::Western Aleutian Islands East SEC": 4.151652,
-    "Western_Aleutian_Islands::Western Aleutian Islands West SEC": 20.182223
+    "Western_Aleutian_Islands::Western Aleutian Islands West SEC": 20.090174
   },
   "caribbean": {
     "Caribbean_1_VFR": 151.313103,
@@ -30,8 +30,8 @@
     "Albuquerque": 30.261793,
     "Atlanta": 30.197129,
     "Billings": 39.108269,
-    "Brownsville": 27.050055,
-    "Charlotte": 29.963284,
+    "Brownsville": 27.024214,
+    "Charlotte": 29.947032,
     "Cheyenne": 37.476584,
     "Chicago": 35.765187,
     "Cincinnati": 30.546373,
@@ -48,17 +48,17 @@
     "Klamath_Falls": 37.471567,
     "Lake_Huron": 36.04696,
     "Las_Vegas": 32.048388,
-    "Los_Angeles": 26.51532,
+    "Los_Angeles": 26.433646,
     "Memphis": 30.285897,
     "Miami": 27.537753,
     "Montreal": 36.103621,
-    "New_Orleans": 25.909135,
-    "New_York": 34.801389,
+    "New_Orleans": 25.872161,
+    "New_York": 34.682451,
     "Omaha": 37.466126,
     "Phoenix": 31.556784,
     "Salt_Lake_City": 37.408767,
     "San_Antonio": 28.001064,
-    "San_Francisco": 30.689407,
+    "San_Francisco": 30.364407,
     "Seattle": 39.138248,
     "St_Louis": 31.913595,
     "Twin_Cities": 39.193814,
@@ -66,13 +66,12 @@
     "Wichita": 30.84889
   },
   "hawaii": {
-    "Hawaiian_Islands::Hawaiian Islands SEC": 13.960774,
-    "Hawaiian_Islands::Honolulu Inset SEC": 0.876739
+    "Hawaiian_Islands::Hawaiian Islands SEC": 13.610712
   },
   "mariana": {
-    "Hawaiian_Islands::Mariana Islands Inset SEC": 6.947081
+    "Hawaiian_Islands::Mariana Islands Inset SEC": 6.444185
   },
   "samoa": {
-    "Hawaiian_Islands::Samoan Islands Inset SEC": 4.341221
+    "Hawaiian_Islands::Samoan Islands Inset SEC": 4.332288
   }
 }
