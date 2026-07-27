@@ -24,10 +24,22 @@ REPO = os.environ.get("REPO_ROOT") or os.path.dirname(
 )
 
 
+import json
 import os
 
 
 SRC = f"{REPO}/data/src"
+
+_REGIONS = None
+
+
+def _windows(region):
+    """Per-unit lon/lat window overrides declared by a region."""
+    global _REGIONS
+    if _REGIONS is None:
+        with open(f"{REPO}/regions.json") as f:
+            _REGIONS = json.load(f)
+    return _REGIONS.get(region, {}).get("windows", {})
 
 
 def unit_id(entry):
@@ -38,8 +50,20 @@ def unit_id(entry):
     return d + "__" + stem.replace(" ", "_")
 
 
-def unit_paths(entry):
-    """(tif, vrt, cutline) absolute paths for a chart-list entry."""
+def unit_paths(entry, region=None):
+    """(tif, vrt, cutline) absolute paths for a chart-list entry.
+
+    The cutline is scoped by region when the region declares a WINDOW for
+    this unit. One scan can belong to two regions through different
+    windows (the Western Aleutians East scan straddles the antimeridian
+    and is processed as 177E..180 for aleutians_west and 180..-172.3 for
+    aleutians_far). Sharing one cutline file meant whichever region
+    derived last silently overwrote the other's geometry. CI never saw
+    it, since each region derives on its own runner into its own
+    artifact, but every local preview, seam scan and area baseline for
+    the losing region was computed from the wrong window.
+    """
+    region = region or os.environ.get("REGION", "conus")
     if "::" in entry:
         d, stem = entry.split("::", 1)
         tif = os.path.join(SRC, d, stem + ".tif")
@@ -61,7 +85,12 @@ def unit_paths(entry):
         # demand one (it failed the whole bake at that stage).
         tif = os.path.join(dpath, tifs[0] if tifs else d + ".tif")
     uid = unit_id(entry)
-    return tif, os.path.join(SRC, d, uid + ".vrt"), os.path.join(SRC, d, uid + ".cutline.geojson")
+    stem = f"{uid}.{region}" if entry in _windows(region) else uid
+    return (
+        tif,
+        os.path.join(SRC, d, uid + ".vrt"),
+        os.path.join(SRC, d, stem + ".cutline.geojson"),
+    )
 
 
 def read_list(region):
@@ -75,6 +104,7 @@ def read_list(region):
 if __name__ == "__main__":
     import sys
 
-    for entry in read_list(sys.argv[1]):
-        tif, vrt, cut = unit_paths(entry)
+    region = sys.argv[1]
+    for entry in read_list(region):
+        tif, vrt, cut = unit_paths(entry, region)
         print("\t".join((unit_id(entry), tif, vrt, cut)))

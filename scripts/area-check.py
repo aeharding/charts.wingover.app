@@ -50,7 +50,7 @@ def area_of(path):
 def main(region, update):
     areas = {}
     for entry in units.read_list(region):
-        _, _, cut = units.unit_paths(entry)
+        _, _, cut = units.unit_paths(entry, region)
         side = cut.replace(".cutline.geojson", ".side.geojson")
         areas[entry] = round(area_of(cut) + area_of(side), 6)
 

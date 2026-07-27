@@ -418,7 +418,7 @@ for chart, geom in final.items():
             }
         ],
     }
-    json.dump(fc, open(units.unit_paths(chart)[2], "w"))
+    json.dump(fc, open(units.unit_paths(chart, REGION)[2], "w"))
 
     # SIDE cutline: the sheet's overedge strips, written separately so
     # the mosaic can draw every sheet's overedge UNDER every sheet's
@@ -428,7 +428,7 @@ for chart, geom in final.items():
     # last hides the stroke entirely. Alphabetical file order used to
     # decide it, which is why that seam showed.
     side_polys = side_rects.get(chart) or []
-    side_path = units.unit_paths(chart)[2].replace(".cutline.geojson", ".side.geojson")
+    side_path = units.unit_paths(chart, REGION)[2].replace(".cutline.geojson", ".side.geojson")
     if side_polys:
         sg = to_ogr([[(p[0], p[1]) for p in poly] for poly in side_polys])
         for quad in regions[chart]["insets"]:

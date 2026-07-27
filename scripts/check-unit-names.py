@@ -25,7 +25,7 @@ for region in json.load(open(f"{REPO}/regions.json")):
         if " " in uid or ":" in uid:
             print(f"UNSAFE uid for S3 key: {region} {entry!r} -> {uid!r}")
             bad += 1
-        tif, vrt, cut = units.unit_paths(entry)
+        tif, vrt, cut = units.unit_paths(entry, region)
         if not os.path.basename(vrt).startswith(uid):
             print(f"MISMATCH {region} {entry!r}: vrt {os.path.basename(vrt)} vs uid {uid}")
             bad += 1

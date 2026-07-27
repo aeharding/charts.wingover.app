@@ -44,7 +44,7 @@ SIDES = os.environ.get("WITH_SIDES", "1") == "1"
 def region_extent(region):
     union = None
     for entry in units.read_list(region):
-        _, _, cut = units.unit_paths(entry)
+        _, _, cut = units.unit_paths(entry, region)
         paths = (cut, cut.replace(".cutline.", ".side.")) if SIDES else (cut,)
         for path in paths:
             if not os.path.exists(path):

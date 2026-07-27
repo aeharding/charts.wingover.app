@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import units  # noqa: E402
 
 region, entry = sys.argv[1], sys.argv[2]
-tif, vrt, cut = units.unit_paths(entry)
+tif, vrt, cut = units.unit_paths(entry, region)
 # NOT "UID": that is a readonly builtin in bash and the assignment
 # fails the step ("UID: readonly variable").
 print(f"UNIT={shlex.quote(units.unit_id(entry))}")
