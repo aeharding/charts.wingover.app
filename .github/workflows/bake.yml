@@ -181,6 +181,8 @@ jobs:
         with:
           name: cutlines-${{ inputs.region }}
           path: data/src/
+      - name: Unit names are S3-safe and consistent
+        run: python3 scripts/check-unit-names.py
       - name: Sheet list matches FAA
         run: |
           ln -s "$PWD" /repo
