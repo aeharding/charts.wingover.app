@@ -66,7 +66,12 @@ def main(region, prefix):
         lo, hi = (int(p) for p in b["name"][1:].split("-"))
         cols.update(range(lo, hi))
 
-    # 1. z8 tiles in this region's columns only
+    # 1. z8 tiles in this region's columns. NOTE: columns are not
+    # exclusive - the Caribbean's z8 columns sit inside CONUS's, so this
+    # count can include a neighbour's tiles. It is a floor, not proof.
+    # The sentinel check below is the authoritative one: verifying prefix
+    # 07-09-2026e (a CONUS-only bake) the Caribbean counted 255 tiles,
+    # all of them CONUS's, and only the sentinels caught it.
     n8 = 0
     for c in sorted(cols):
         r = aws("s3", "ls", "--recursive", f"s3://{BUCKET}/{prefix}/3x/8/{c}/")
