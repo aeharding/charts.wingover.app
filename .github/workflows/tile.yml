@@ -124,6 +124,10 @@ jobs:
           n=$(find tiles3x -name '*.jxl' | wc -l)
           echo "band ${{ matrix.band.name }}: $n tiles"
           [ "$n" -gt 0 ] || { echo "band produced ZERO tiles" >&2; exit 1; }
+          # Did the cities in THIS band actually get tiles? Runs before
+          # the sync, so a real bake fails rather than publishing a hole,
+          # and a dry run proves coverage without publishing at all.
+          python3 scripts/check-band-sentinels.py "$BX0" "$BX1" tiles3x
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             echo "DRY RUN: built $n tiles for band ${{ matrix.band.name }}; publishing nothing"
             exit 0
