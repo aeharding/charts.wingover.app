@@ -1,30 +1,30 @@
 {
   "alaska": {
-    "Anchorage": 47.097233,
-    "Bethel": 55.46659,
-    "Cape_Lisburne": 65.513828,
-    "Cold_Bay": 22.494201,
-    "Dawson": 56.81123,
-    "Dutch_Harbor": 37.425258,
-    "Fairbanks": 56.563755,
-    "Juneau": 44.114977,
+    "Anchorage": 47.459957,
+    "Bethel": 55.775261,
+    "Cape_Lisburne": 65.760766,
+    "Cold_Bay": 22.541223,
+    "Dawson": 57.677067,
+    "Dutch_Harbor": 37.957024,
+    "Fairbanks": 57.697557,
+    "Juneau": 44.162577,
     "Ketchikan": 39.852626,
-    "Kodiak": 46.57253,
-    "McGrath": 47.498021,
-    "Nome": 59.749375,
-    "Point_Barrow": 71.960279,
-    "Seward": 27.941693
+    "Kodiak": 46.804461,
+    "McGrath": 48.818133,
+    "Nome": 59.973883,
+    "Point_Barrow": 72.006771,
+    "Seward": 28.293442
   },
   "aleutians_far": {
     "Western_Aleutian_Islands::Western Aleutian Islands East SEC": 16.358088
   },
   "aleutians_west": {
-    "Western_Aleutian_Islands::Western Aleutian Islands East SEC": 16.358088,
-    "Western_Aleutian_Islands::Western Aleutian Islands West SEC": 19.642823
+    "Western_Aleutian_Islands::Western Aleutian Islands East SEC": 4.151652,
+    "Western_Aleutian_Islands::Western Aleutian Islands West SEC": 20.182223
   },
   "caribbean": {
-    "Caribbean_1_VFR": 150.103125,
-    "Caribbean_2_VFR": 103.065
+    "Caribbean_1_VFR": 151.313103,
+    "Caribbean_2_VFR": 104.381193
   },
   "conus": {
     "Albuquerque": 30.261793,
@@ -66,8 +66,8 @@
     "Wichita": 30.84889
   },
   "hawaii": {
-    "Hawaiian_Islands::Hawaiian Islands SEC": 13.95541,
-    "Hawaiian_Islands::Honolulu Inset SEC": 0.488854
+    "Hawaiian_Islands::Hawaiian Islands SEC": 13.960774,
+    "Hawaiian_Islands::Honolulu Inset SEC": 0.876739
   },
   "mariana": {
     "Hawaiian_Islands::Mariana Islands Inset SEC": 6.947081
