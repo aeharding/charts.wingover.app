@@ -73,21 +73,30 @@ def main():
             f"lat {e[2]:7.2f}..{e[3]:7.2f}"
         )
 
+    cfg = json.load(open(f"{REPO}/regions.json"))
     names = list(extents)
-    bad = []
+    bad, resolved = [], []
     for i, a in enumerate(names):
         for b in names[i + 1:]:
             inter = extents[a].Intersection(extents[b])
-            if inter and not inter.IsEmpty() and inter.GetArea() > TOL_DEG2:
-                bad.append((a, b, inter.GetArea()))
+            if not (inter and not inter.IsEmpty() and inter.GetArea() > TOL_DEG2):
+                continue
+            pa = cfg.get(a, {}).get("priority", 10)
+            pb = cfg.get(b, {}).get("priority", 10)
+            # Overlap itself is fine: the global tiler draws both into one
+            # band VRT, later wins. It is only ambiguous at EQUAL priority.
+            (bad if pa == pb else resolved).append((a, b, inter.GetArea(), pa, pb))
 
+    for a, b, area, pa, pb in resolved:
+        win = a if pa > pb else b
+        print(f"\noverlap {a} x {b}: {area:.3f} deg2 -> {win} wins (priority {max(pa, pb)})")
     if bad:
-        print(f"\nREGION OVERLAP: {len(bad)} pair(s) claim the same ground")
-        for a, b, area in bad:
-            print(f"   {a} x {b}: {area:.3f} deg2")
-        print("Both regions tile into one keyspace; the later sync wins.")
+        print(f"\nAMBIGUOUS OVERLAP: {len(bad)} pair(s) share ground at EQUAL priority")
+        for a, b, area, pa, pb in bad:
+            print(f"   {a} x {b}: {area:.3f} deg2, both priority {pa}")
+        print("Give one of them a higher priority in regions.json.")
         return 1
-    print(f"\nregion overlap OK: {len(names)} regions, none share ground")
+    print(f"\nregion overlap OK: {len(names)} regions, every overlap has a winner")
     return 0
 
 
