@@ -15,7 +15,11 @@ on:
         default: 07-09-2026
       prefix:
         description: Release prefix under /vfr/ (MUST be new)
-        default: 07-09-2026g
+        default: 07-09-2026h
+      dry_run:
+        description: run every stage but publish nothing
+        type: boolean
+        default: false
 
 jobs:
   region:
@@ -37,4 +41,5 @@ jobs:
       prefix: ${{ inputs.prefix }}
       stages: all
       region: ${{ matrix.region }}
+      dry_run: ${{ inputs.dry_run }}
     secrets: inherit
