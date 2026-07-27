@@ -34,11 +34,19 @@ ogr.UseExceptions()
 TOL_DEG2 = float(os.environ.get("OVERLAP_TOL", "0.5"))
 
 
+# Overedge strips are underlay: they intentionally reach across joins,
+# and inside a region draw order makes that harmless. Measure body-on-body
+# overlap separately, since only that is two regions drawing real chart on
+# the same ground.
+SIDES = os.environ.get("WITH_SIDES", "1") == "1"
+
+
 def region_extent(region):
     union = None
     for entry in units.read_list(region):
         _, _, cut = units.unit_paths(entry)
-        for path in (cut, cut.replace(".cutline.", ".side.")):
+        paths = (cut, cut.replace(".cutline.", ".side.")) if SIDES else (cut,)
+        for path in paths:
             if not os.path.exists(path):
                 continue
             geom = ogr.CreateGeometryFromJson(
