@@ -288,11 +288,30 @@ jobs:
               -co COMPRESS=DEFLATE -co TILED=YES "$src" "low_$src"
           done
           command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
+          # --only-show-errors, NOT --quiet: --quiet hides the error too,
+          # so three warps failed with a silent exit 1 and no clue why.
+          # Retries because R2 throttles bursts and these uploads had
+          # none, while the tile sync has had a retry loop ever since a
+          # band died at 96% on ServiceUnavailable. Staging the low-res
+          # copies doubled the object count to ~236 per bake.
+          aws configure set retry_mode adaptive
+          aws configure set max_attempts 10
+          put() {
+            for attempt in 1 2 3 4 5; do
+              if aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --only-show-errors "$1" "$2"; then
+                return 0
+              fi
+              echo "upload attempt $attempt failed for $1; retrying" >&2
+              sleep $((attempt * 15))
+            done
+            echo "upload FAILED after 5 attempts: $1 -> $2" >&2
+            return 1
+          }
+          base="s3://$BUCKET/scratch/${{ github.run_id }}/${{ inputs.region }}"
           for f in "$UNIT.tif" "$UNIT.side.tif"; do
             [ -f "$f" ] || continue
-            aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --quiet \
-              "$f" "s3://$BUCKET/scratch/${{ github.run_id }}/${{ inputs.region }}/warped/$f"
-            aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --quiet \
-              "low_$f" "s3://$BUCKET/scratch/${{ github.run_id }}/${{ inputs.region }}/lowres/$f"
+            echo "staging $f ($(du -h "$f" | cut -f1) full, $(du -h "low_$f" | cut -f1) low)"
+            put "$f" "$base/warped/$f"
+            put "low_$f" "$base/lowres/$f"
           done
 
