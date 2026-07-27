@@ -44,5 +44,21 @@
       -71.78,
       37.8
     ]
+  },
+  {
+    "sheet": "Ketchikan",
+    "seed": [
+      -136.0,
+      55.2
+    ],
+    "note": "Ketchikan 1:250,000 inset over the Pacific; the frame detector misses it (0 frames found)"
+  },
+  {
+    "sheet": "Dutch_Harbor",
+    "seed": [
+      -169.6,
+      55.4
+    ],
+    "note": "Second Dutch Harbor inset over the Bering Sea, west of the one the frame detector finds"
   }
 ]
