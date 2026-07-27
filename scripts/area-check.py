@@ -11,19 +11,31 @@ Usage:
   python3 scripts/area-check.py <region> --update   # rewrite the baseline
 """
 
+import os
+
+# Repo root resolved from THIS FILE, never hardcoded: the CI plan job
+# runs outside the container where /repo does not exist. bands.py
+# failing there produced an EMPTY tile matrix, so every tile job
+# skipped silently and the bake shipped only z0-7.
+REPO = os.environ.get("REPO_ROOT") or os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
+
+
 import json
 import os
 import sys
 
-sys.path.insert(0, "/repo/scripts")
+sys.path.insert(0, f"{REPO}/scripts")
 from osgeo import ogr  # noqa: E402
 
 import units  # noqa: E402
 
+
 ogr.UseExceptions()
 
 TOL = float(os.environ.get("AREA_TOL", "0.05"))  # 5%
-BASELINE = "/repo/areas-baseline.json"
+BASELINE = f"{REPO}/areas-baseline.json"
 
 
 def area_of(path):

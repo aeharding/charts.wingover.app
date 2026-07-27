@@ -1,3 +1,14 @@
+
+import os
+
+# Repo root resolved from THIS FILE, never hardcoded: the CI plan job
+# runs outside the container where /repo does not exist. bands.py
+# failing there produced an EMPTY tile matrix, so every tile job
+# skipped silently and the bake shipped only z0-7.
+REPO = os.environ.get("REPO_ROOT") or os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
+
 # Finalize cutlines: arbitrate YIELD side columns, subtract detected
 # inset boxes, hole-gate the union coverage, and emit densified
 # MultiPolygon cutlines per sheet.
@@ -19,15 +30,16 @@ from osgeo import ogr
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import units  # noqa: E402
 
+
 ogr.UseExceptions()
 
 CELL = 1 / 12
 REGION = os.environ.get("REGION", "conus")
-DATA = f"/repo/data/{REGION}/dataregions.json"
+DATA = f"{REPO}/data/{REGION}/dataregions.json"
 regions = json.load(open(DATA))
 
 # hole-gate grid for this region (regions.json)
-W0, S0, E0, N0 = json.load(open("/repo/regions.json"))[REGION]["grid"]
+W0, S0, E0, N0 = json.load(open(f"{REPO}/regions.json"))[REGION]["grid"]
 GW = round((E0 - W0) / CELL)
 GH = round((N0 - S0) / CELL)
 

@@ -63,8 +63,18 @@ jobs:
       - uses: actions/checkout@v7
       - id: emit
         run: |
-          echo "sheets=$(grep -vE '^\s*(#|$)' charts-${{ inputs.region }}.txt | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
-          echo "bands=$(python3 scripts/bands.py "${{ inputs.region }}")" >> "$GITHUB_OUTPUT"
+          sheets=$(grep -vE '^\s*(#|$)' charts-${{ inputs.region }}.txt | jq -R . | jq -sc .)
+          bands=$(python3 scripts/bands.py "${{ inputs.region }}")
+          # FAIL LOUDLY on an empty matrix. bands.py used to die here
+          # (it hardcoded /repo, absent on a plain runner); the error
+          # vanished into command substitution, the tile matrix came out
+          # empty, every tile job skipped, and the bake shipped only
+          # z0-7 while reporting success.
+          [ "$(printf '%s' "$sheets" | jq 'length')" -gt 0 ] || { echo "empty sheet list" >&2; exit 1; }
+          [ "$(printf '%s' "$bands" | jq 'length')" -gt 0 ] || { echo "empty band list" >&2; exit 1; }
+          echo "sheets=$sheets" >> "$GITHUB_OUTPUT"
+          echo "bands=$bands" >> "$GITHUB_OUTPUT"
+          echo "planned $(printf '%s' "$sheets" | jq 'length') sheets, $(printf '%s' "$bands" | jq 'length') bands"
 
   # Download every sheet's zip ONCE per cycle into an actions/cache keyed
   # by the cycle (FAA zips are immutable within a cycle). Every other job

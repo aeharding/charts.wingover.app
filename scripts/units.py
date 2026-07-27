@@ -15,7 +15,19 @@ A chart list entry is either "Dir" (a single-TIF sheet) or
 
 import os
 
-SRC = "/repo/data/src"
+# Repo root resolved from THIS FILE, never hardcoded: the CI plan job
+# runs outside the container where /repo does not exist. bands.py
+# failing there produced an EMPTY tile matrix, so every tile job
+# skipped silently and the bake shipped only z0-7.
+REPO = os.environ.get("REPO_ROOT") or os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
+
+
+import os
+
+
+SRC = f"{REPO}/data/src"
 
 
 def unit_id(entry):
@@ -55,7 +67,7 @@ def unit_paths(entry):
 def read_list(region):
     return [
         line.strip()
-        for line in open(f"/repo/charts-{region}.txt")
+        for line in open(f"{REPO}/charts-{region}.txt")
         if line.strip() and not line.startswith("#")
     ]
 

@@ -9,10 +9,22 @@ one silently 404 the fetch).
 Usage: python3 scripts/check-sheet-list.py <cycle MM-DD-YYYY>
 """
 
+import os
+
+# Repo root resolved from THIS FILE, never hardcoded: the CI plan job
+# runs outside the container where /repo does not exist. bands.py
+# failing there produced an EMPTY tile matrix, so every tile job
+# skipped silently and the bake shipped only z0-7.
+REPO = os.environ.get("REPO_ROOT") or os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
+
+
 import json
 import re
 import sys
 import urllib.request
+
 
 CYCLE = sys.argv[1] if len(sys.argv) > 1 else "07-09-2026"
 BASE = f"https://aeronav.faa.gov/visual/{CYCLE}"
@@ -32,8 +44,8 @@ def listing(path):
 published = listing("sectional-files") | listing("Caribbean")
 
 ours = set()
-for region in json.load(open("/repo/regions.json")):
-    for line in open(f"/repo/charts-{region}.txt"):
+for region in json.load(open(f"{REPO}/regions.json")):
+    for line in open(f"{REPO}/charts-{region}.txt"):
         line = line.strip()
         if line and not line.startswith("#"):
             ours.add(line.split("::", 1)[0])

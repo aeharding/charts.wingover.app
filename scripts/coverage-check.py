@@ -10,12 +10,24 @@ Usage: python3 scripts/coverage-check.py [region]
 Exit 1 if any sentinel has no coverage.
 """
 
+import os
+
+# Repo root resolved from THIS FILE, never hardcoded: the CI plan job
+# runs outside the container where /repo does not exist. bands.py
+# failing there produced an EMPTY tile matrix, so every tile job
+# skipped silently and the bake shipped only z0-7.
+REPO = os.environ.get("REPO_ROOT") or os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
+
+
 import math
 import os
 import sys
 
 import numpy as np
 from osgeo import gdal
+
 
 gdal.UseExceptions()
 
@@ -64,7 +76,7 @@ SENTINELS = {
 
 
 def main(region):
-    path = f"/repo/data/{region}/preview/conus.vrt"
+    path = f"{REPO}/data/{region}/preview/conus.vrt"
     if not os.path.exists(path):
         print(f"no preview for {region}; render it first")
         return 1

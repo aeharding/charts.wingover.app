@@ -1,3 +1,14 @@
+
+import os
+
+# Repo root resolved from THIS FILE, never hardcoded: the CI plan job
+# runs outside the container where /repo does not exist. bands.py
+# failing there produced an EMPTY tile matrix, so every tile job
+# skipped silently and the bake shipped only z0-7.
+REPO = os.environ.get("REPO_ROOT") or os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
+
 #!/usr/bin/env python3
 # Emit the tile-matrix shards as JSON: longitude bands aligned to z8
 # tile columns in EPSG:3857, so band edges never split a tile and each
@@ -7,13 +18,14 @@ import math
 import os
 import sys
 
+
 TILE0 = 20037508.342789244
 Z8 = 2 * TILE0 / 256  # z8 tile width in meters
 # Longitude span comes from the region's grid (regions.json): each
 # region tiles its own extent, so one bake covers everything from the
 # Aleutians to Puerto Rico.
 REGION = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("REGION", "conus")
-_grid = json.load(open("/repo/regions.json"))[REGION]["grid"]
+_grid = json.load(open(f"{REPO}/regions.json"))[REGION]["grid"]
 WEST, EAST = _grid[0] - 0.5, _grid[2] + 0.5
 COLS_PER_BAND = 3
 

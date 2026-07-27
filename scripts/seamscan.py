@@ -1,3 +1,14 @@
+
+import os
+
+# Repo root resolved from THIS FILE, never hardcoded: the CI plan job
+# runs outside the container where /repo does not exist. bands.py
+# failing there produced an EMPTY tile matrix, so every tile job
+# skipped silently and the bake shipped only z0-7.
+REPO = os.environ.get("REPO_ROOT") or os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
+
 # Automated seam scanner: sweep the mosaic for WHITE strips and
 # TRANSPARENT slits that have map content on both sides — the artifact
 # signature of a bad joint. Zero findings (outside the intentional inset
@@ -10,9 +21,10 @@ import sys
 import numpy as np
 from osgeo import gdal
 
+
 gdal.UseExceptions()
 REGION = os.environ.get("REGION", "conus")
-ds = gdal.Open(f"/repo/data/{REGION}/preview/conus.vrt")
+ds = gdal.Open(f"{REPO}/data/{REGION}/preview/conus.vrt")
 gt = ds.GetGeoTransform()
 W, H = ds.RasterXSize, ds.RasterYSize
 
@@ -26,7 +38,7 @@ def to_lat(py):
 # produced — the old hardcoded CONUS box list was both stale and wrong
 # for every other region.
 CHOPS = []
-_dr = f"/repo/data/{REGION}/dataregions.json"
+_dr = f"{REPO}/data/{REGION}/dataregions.json"
 if os.path.exists(_dr):
     for _r in json.load(open(_dr)).values():
         for _q in _r.get("insets", []):

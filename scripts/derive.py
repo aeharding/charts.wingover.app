@@ -1,3 +1,14 @@
+
+import os
+
+# Repo root resolved from THIS FILE, never hardcoded: the CI plan job
+# runs outside the container where /repo does not exist. bands.py
+# failing there produced an EMPTY tile matrix, so every tile job
+# skipped silently and the bake shipped only z0-7.
+REPO = os.environ.get("REPO_ROOT") or os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
+
 # Cutline derivation v2: the cutline IS the detected map-data region.
 # Per chart: warp once to a coarse geographic grid in memory, classify
 # 1/12-degree cells as map-data (textured, non-white) vs panel/collar
@@ -17,9 +28,10 @@ gdal.UseExceptions()
 # hole-gate grid, but all sheets share one source pool — a sheet belongs
 # to exactly one region, and its cutline lives beside its scan.
 REGION = os.environ.get("REGION", "conus")
-SRC = "/repo/data/src"
+SRC = f"{REPO}/data/src"
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import units  # noqa: E402
+
 RES = 0.00125        # warp grid (deg/px) — fine enough that thin contour
                      # lines survive nearest sampling (sparse desert charts
                      # have no other texture)
@@ -57,7 +69,7 @@ def detect(chart):
     # override the window so such a scan is processed as two halves
     # (Western Aleutians East: 177E-180, and 180 to -172.35W for Adak).
     win = (
-        json.load(open("/repo/regions.json"))[REGION]
+        json.load(open(f"{REPO}/regions.json"))[REGION]
         .get("windows", {})
         .get(chart)
     )
@@ -890,7 +902,7 @@ def detect_inset(chart, seed_lon, seed_lat):
         "re-seed insets.json for this edition"
     )
 
-INSETS_PATH = "/repo/insets.json"
+INSETS_PATH = f"{REPO}/insets.json"
 INSETS = json.load(open(INSETS_PATH)) if os.path.exists(INSETS_PATH) else []
 
 def source_rect_quad(chart, box, pad=0.01):
@@ -1177,6 +1189,6 @@ if __name__ == "__main__":
             print(line, flush=True)
             out[chart] = region
 
-    os.makedirs(f"/repo/data/{REGION}", exist_ok=True)
-    json.dump(out, open(f"/repo/data/{REGION}/dataregions.json", "w"))
+    os.makedirs(f"{REPO}/data/{REGION}", exist_ok=True)
+    json.dump(out, open(f"{REPO}/data/{REGION}/dataregions.json", "w"))
     print("wrote dataregions.json")

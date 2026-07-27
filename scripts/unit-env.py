@@ -7,9 +7,10 @@ place that knows how a chart-list entry maps to files.
 """
 
 import shlex
+import os
 import sys
 
-sys.path.insert(0, "/repo/scripts")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import units  # noqa: E402
 
 region, entry = sys.argv[1], sys.argv[2]
