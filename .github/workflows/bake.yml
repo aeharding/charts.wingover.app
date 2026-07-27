@@ -283,30 +283,13 @@ jobs:
         run: |
           export AWS_S3_ENDPOINT="$(echo "${{ secrets.R2_ENDPOINT }}" | sed 's|https://||')"
           command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
-          # Which sheets intersect this band? Header reads only.
-          python3 - > fetch.txt <<'EOF'
-          import os
-          import sys
-
-          sys.path.insert(0, "scripts")
-          from osgeo import gdal
-
-          import units
-
-          gdal.UseExceptions()
-          x0, x1 = float(os.environ["BX0"]), float(os.environ["BX1"])
-          # UNIT IDS, not raw entries: warp uploads as "$UNIT.tif" with
-          # spaces and :: sanitised, so building paths from chart lines
-          # 404s for every multi-scan sheet (Hawaii, Marianas, Samoa,
-          # both Aleutian halves).
-          for entry in units.read_list(os.environ["REGION"]):
-              uid = units.unit_id(entry)
-              uri = f"/vsis3/{os.environ['BUCKET']}/scratch/{os.environ['RUN_ID']}/warped/{uid}.tif"
-              cc = gdal.Info(uri, format="json")["cornerCoordinates"]
-              if cc["lowerRight"][0] > x0 and cc["upperLeft"][0] < x1:
-                  print(uid)
-          EOF
+          # Band membership and Y extent: scripts/bandsel.py, shared with
+          # the local tile dry run so CI and the dry run cannot drift.
+          python3 scripts/bandsel.py "$REGION" "$BX0" "$BX1" \
+            "/vsis3/$BUCKET/scratch/$RUN_ID/warped/{uid}.tif"
+          . ./bandy.env
           echo "band sheets: $(tr '\n' ' ' < fetch.txt)"
+          echo "band Y extent: $BY0 .. $BY1"
           # Localize the inputs: aws cp retries properly, and the encode
           # then runs against local disk instead of a 90-minute HTTP stream.
           mkdir -p warped
@@ -314,7 +297,7 @@ jobs:
             aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp --quiet \
               "s3://$BUCKET/scratch/$RUN_ID/warped/$c.tif" "warped/$c.tif"
           done
-          gdalbuildvrt -te ${{ matrix.band.x0 }} 2600000 ${{ matrix.band.x1 }} 6500000 \
+          gdalbuildvrt -te ${{ matrix.band.x0 }} "$BY0" ${{ matrix.band.x1 }} "$BY1" \
             band.vrt warped/*.tif
           gdal raster tile -f JPEGXL \
             --creation-option LOSSLESS=NO --creation-option DISTANCE=4 --creation-option EFFORT=7 \

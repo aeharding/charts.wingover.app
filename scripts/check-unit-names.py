@@ -4,15 +4,21 @@ The tile stage was the one step the earlier dry-run skipped, and it is
 exactly where the last dispatch died: warp uploads "$UNIT.tif" while
 tile built paths from raw chart lines, so every multi-scan sheet 404'd.
 """
+import json
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
-import units
+# Repo root resolved from THIS FILE, never hardcoded, and the region
+# list read from regions.json rather than restated here: a hardcoded
+# list silently stops covering a region the moment one is added.
+REPO = os.environ.get("REPO_ROOT") or os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
+sys.path.insert(0, f"{REPO}/scripts")
+import units  # noqa: E402
 
 bad = 0
-for region in ("conus", "alaska", "hawaii", "mariana", "samoa",
-               "aleutians_west", "aleutians_far", "caribbean"):
+for region in json.load(open(f"{REPO}/regions.json")):
     for entry in units.read_list(region):
         uid = units.unit_id(entry)
         # what warp uploads (unit-env.py UNIT) vs what tile now asks for

@@ -32,8 +32,12 @@ COLS_PER_BAND = 3
 def col(lon):
     return (lon + 180.0) / 360.0 * 256
 
-c0 = math.floor(col(WEST))
-c1 = math.ceil(col(EAST))
+# Clamp to the z8 grid. The half-degree padding pushes Alaska and both
+# Aleutian halves past the antimeridian (columns -1 and 257), which are
+# not addressable tiles. Chart on the far side of 180 is covered by the
+# OTHER Aleutian region, not by an out-of-range column here.
+c0 = max(0, math.floor(col(WEST)))
+c1 = min(256, math.ceil(col(EAST)))
 bands = []
 c = c0
 while c < c1:
