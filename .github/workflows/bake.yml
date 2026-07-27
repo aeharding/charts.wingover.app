@@ -219,6 +219,12 @@ jobs:
           bash scripts/preview.sh
           python3 scripts/coverage-check.py "${{ inputs.region }}"
           python3 scripts/seamscan.py | tail -20
+          # After the fetch: this reads the scans, not just the geometry.
+          # CONTAINED and SCALE block; FURNITURE is advisory, since a
+          # whiteness test cannot see a coloured tint ramp. The Honolulu
+          # inset was a 1:250k blow-up lying 100% inside the main Hawaii
+          # sheet, and every other gate passed it.
+          python3 scripts/audit-units.py "${{ inputs.region }}"
 
   warp:
     needs: [plan, cutlines, gate]
