@@ -37,7 +37,7 @@ gdal.UseExceptions()
 ogr.UseExceptions()
 
 CONTAINED_FRAC = 0.90   # of the smaller unit's area
-SCALE_TOL = 0.25        # vs the region's median m/px
+SCALE_TOL = 0.25        # vs the region's main (largest) sheet
 WHITE = 242             # same threshold derive.py measured for paper
 FURNITURE_FRAC = 0.85   # of a sampled edge band
 EDGE_M = 1200.0         # how deep to sample inside each edge
@@ -152,24 +152,24 @@ def main(regions):
                         f"{big[0]}/{big[1]}"
                     )
 
-    # SCALE: per region, against the median
+    # SCALE: per region, against the main (largest) sheet
     for r in regions:
         rs = {e: res_m(e, r) for e in units.read_list(r)}
         rs = {e: v for e, v in rs.items() if v}
         if len(rs) < 2:
             continue
         areas = {e: (geoms[(r, e)].GetArea() if (r, e) in geoms else 0) for e in rs}
-        main = max(areas, key=areas.get)
-        norm = rs[main]
+        biggest = max(areas, key=areas.get)
+        norm = rs[biggest]
         for e, v in rs.items():
-            if e != main and abs(v - norm) / norm > SCALE_TOL:
+            if e != biggest and abs(v - norm) / norm > SCALE_TOL:
                 problems.append(
                     f"SCALE      {r}/{e}\n"
-                    f"           {v:.1f} m/px vs {main} at {norm:.1f} "
+                    f"           {v:.1f} m/px vs {biggest} at {norm:.1f} "
                     f"({v / norm:.2f}x)"
                 )
 
-    # FURNITURE: white band inside a cutline edge
+    # FURNITURE: white band inside a cutline edge that nothing covers
     for r, e in allunits:
         others = [g for k, g in geoms.items() if k != (r, e)]
         w = edge_whiteness(e, r, others)
