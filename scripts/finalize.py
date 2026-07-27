@@ -28,7 +28,8 @@ import numpy as np
 from osgeo import ogr
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import units  # noqa: E402
+import units
+import yields  # noqa: E402
 
 
 ogr.UseExceptions()
@@ -397,9 +398,24 @@ def roundtrip_ok(g):
     return js2 if (again is not None and again.IsValid()) else None
 
 
+# Ground another region outranks us on (CONUS sectionals beat the
+# Caribbean VFR over south Florida). Both ship into one tile keyspace, so
+# without subtracting it the winner is whichever tile job syncs last.
+YIELD, YIELD_PATH = yields.load(REGION)
+if YIELD is not None:
+    print(f"yielding {YIELD.GetArea():.2f} deg2 to {yields.outranked_by(REGION)}")
+
+
+def drop_yield(g):
+    if YIELD is None or g is None or g.IsEmpty():
+        return g
+    out = g.Difference(YIELD)
+    return g if out is None or out.IsEmpty() else out
+
+
 reverted = 0
 for chart, geom in final.items():
-    js = roundtrip_ok(repair(geom))
+    js = roundtrip_ok(repair(drop_yield(geom)))
     if js is None and chart in prefill:
         # gap-fill made this sheet unwritable: ship the pre-fill
         # geometry (hairline gap) rather than a cutline gdalwarp drops.
@@ -433,6 +449,7 @@ for chart, geom in final.items():
         sg = to_ogr([[(p[0], p[1]) for p in poly] for poly in side_polys])
         for quad in regions[chart]["insets"]:
             sg = sg.Difference(to_ogr([[(p[0], p[1]) for p in quad]]))
+        sg = drop_yield(sg)
         sg.Segmentize(0.05)
         sjs = roundtrip_ok(repair(sg))
         if sjs:

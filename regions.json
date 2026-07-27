@@ -1,164 +1,167 @@
 {
-  "conus": {
-    "grid": [
-      -127,
-      23,
-      -60,
-      50
-    ],
-    "charts": [
-      "Albuquerque",
-      "Atlanta",
-      "Billings",
-      "Brownsville",
-      "Charlotte",
-      "Cheyenne",
-      "Chicago",
-      "Cincinnati",
-      "Dallas-Ft_Worth",
-      "Denver",
-      "Detroit",
-      "El_Paso",
-      "Great_Falls",
-      "Green_Bay",
-      "Halifax",
-      "Houston",
-      "Jacksonville",
-      "Kansas_City",
-      "Klamath_Falls",
-      "Lake_Huron",
-      "Las_Vegas",
-      "Los_Angeles",
-      "Memphis",
-      "Miami",
-      "Montreal",
-      "New_Orleans",
-      "New_York",
-      "Omaha",
-      "Phoenix",
-      "Salt_Lake_City",
-      "San_Antonio",
-      "San_Francisco",
-      "Seattle",
-      "St_Louis",
-      "Twin_Cities",
-      "Washington",
-      "Wichita"
-    ]
-  },
-  "alaska": {
-    "grid": [
-      -180,
-      50,
-      -128,
-      73
-    ],
-    "charts": [
-      "Anchorage",
-      "Bethel",
-      "Cape_Lisburne",
-      "Cold_Bay",
-      "Dawson",
-      "Dutch_Harbor",
-      "Fairbanks",
-      "Juneau",
-      "Ketchikan",
-      "Kodiak",
-      "McGrath",
-      "Nome",
-      "Point_Barrow",
-      "Seward"
-    ],
-    "note": "14 mainland sheets. Western Aleutians East is EXCLUDED: despite FAA's East/West split it still straddles the antimeridian (177E..-172W), which one web-mercator warp cannot express; its unique area past Attu is open ocean. TODO: split that scan at 180 into two units to recover it."
-  },
-  "hawaii": {
-    "grid": [
-      -163,
-      17,
-      -153,
-      23
-    ],
-    "charts": [
-      "Hawaiian_Islands::Hawaiian Islands SEC",
-      "Hawaiian_Islands::Honolulu Inset SEC"
-    ]
-  },
-  "caribbean": {
-    "grid": [
-      -85,
-      15,
-      -62,
-      25
-    ],
-    "charts": [
-      "Caribbean_1_VFR",
-      "Caribbean_2_VFR"
-    ],
-    "note": "Separate FAA product line (visual/<cycle>/Caribbean/), not sectional-files. Puerto Rico + Virgin Islands + Lesser Antilles at 1:1M."
-  },
-  "aleutians_west": {
-    "grid": [
-      168,
-      50,
-      180,
-      56
-    ],
-    "charts": [
-      "Western_Aleutian_Islands::Western Aleutian Islands West SEC",
-      "Western_Aleutian_Islands::Western Aleutian Islands East SEC"
-    ],
-    "note": "East longitudes. Includes the EAST scan's 177E-180 half; its other half (180 to -172.35W, which holds Adak) is region aleutians_far. The scan straddles the antimeridian, so it is processed as two windows.",
-    "windows": {
-      "Western_Aleutian_Islands::Western Aleutian Islands East SEC": [
-        177.0,
-        50.7,
-        180.0,
-        53.35
-      ]
-    }
-  },
-  "mariana": {
-    "grid": [
-      143,
-      12,
-      149,
-      21
-    ],
-    "charts": [
-      "Hawaiian_Islands::Mariana Islands Inset SEC"
-    ],
-    "note": "Shipped inside the Hawaiian Islands zip as its own georeferenced scan."
-  },
-  "samoa": {
-    "grid": [
-      -173,
-      -16,
-      -168,
-      -12
-    ],
-    "charts": [
-      "Hawaiian_Islands::Samoan Islands Inset SEC"
-    ],
-    "note": "Shipped inside the Hawaiian Islands zip as its own georeferenced scan."
-  },
-  "aleutians_far": {
-    "grid": [
-      -180,
-      50,
-      -171,
-      54
-    ],
-    "charts": [
-      "Western_Aleutian_Islands::Western Aleutian Islands East SEC"
-    ],
-    "windows": {
-      "Western_Aleutian_Islands::Western Aleutian Islands East SEC": [
-        -180.0,
-        50.7,
-        -172.3,
-        53.35
-      ]
-    },
-    "note": "The Western Aleutians East scan west of the antimeridian: Adak (PADK), Atka."
+ "conus": {
+  "grid": [
+   -127,
+   23,
+   -60,
+   50
+  ],
+  "charts": [
+   "Albuquerque",
+   "Atlanta",
+   "Billings",
+   "Brownsville",
+   "Charlotte",
+   "Cheyenne",
+   "Chicago",
+   "Cincinnati",
+   "Dallas-Ft_Worth",
+   "Denver",
+   "Detroit",
+   "El_Paso",
+   "Great_Falls",
+   "Green_Bay",
+   "Halifax",
+   "Houston",
+   "Jacksonville",
+   "Kansas_City",
+   "Klamath_Falls",
+   "Lake_Huron",
+   "Las_Vegas",
+   "Los_Angeles",
+   "Memphis",
+   "Miami",
+   "Montreal",
+   "New_Orleans",
+   "New_York",
+   "Omaha",
+   "Phoenix",
+   "Salt_Lake_City",
+   "San_Antonio",
+   "San_Francisco",
+   "Seattle",
+   "St_Louis",
+   "Twin_Cities",
+   "Washington",
+   "Wichita"
+  ]
+ },
+ "alaska": {
+  "grid": [
+   -180,
+   50,
+   -128,
+   73
+  ],
+  "charts": [
+   "Anchorage",
+   "Bethel",
+   "Cape_Lisburne",
+   "Cold_Bay",
+   "Dawson",
+   "Dutch_Harbor",
+   "Fairbanks",
+   "Juneau",
+   "Ketchikan",
+   "Kodiak",
+   "McGrath",
+   "Nome",
+   "Point_Barrow",
+   "Seward"
+  ],
+  "note": "14 mainland sheets. Western Aleutians East is EXCLUDED: despite FAA's East/West split it still straddles the antimeridian (177E..-172W), which one web-mercator warp cannot express; its unique area past Attu is open ocean. TODO: split that scan at 180 into two units to recover it."
+ },
+ "hawaii": {
+  "grid": [
+   -163,
+   17,
+   -153,
+   23
+  ],
+  "charts": [
+   "Hawaiian_Islands::Hawaiian Islands SEC",
+   "Hawaiian_Islands::Honolulu Inset SEC"
+  ]
+ },
+ "caribbean": {
+  "grid": [
+   -85,
+   15,
+   -62,
+   25
+  ],
+  "charts": [
+   "Caribbean_1_VFR",
+   "Caribbean_2_VFR"
+  ],
+  "note": "Separate FAA product line (visual/<cycle>/Caribbean/), not sectional-files. Puerto Rico + Virgin Islands + Lesser Antilles at 1:1M. CONUS sectionals (1:500k) outrank it over south Florida; see scripts/make-yield.py.",
+  "yields_to": [
+   "conus"
+  ]
+ },
+ "aleutians_west": {
+  "grid": [
+   168,
+   50,
+   180,
+   56
+  ],
+  "charts": [
+   "Western_Aleutian_Islands::Western Aleutian Islands West SEC",
+   "Western_Aleutian_Islands::Western Aleutian Islands East SEC"
+  ],
+  "note": "East longitudes. Includes the EAST scan's 177E-180 half; its other half (180 to -172.35W, which holds Adak) is region aleutians_far. The scan straddles the antimeridian, so it is processed as two windows.",
+  "windows": {
+   "Western_Aleutian_Islands::Western Aleutian Islands East SEC": [
+    177.0,
+    50.7,
+    180.0,
+    53.35
+   ]
   }
+ },
+ "mariana": {
+  "grid": [
+   143,
+   12,
+   149,
+   21
+  ],
+  "charts": [
+   "Hawaiian_Islands::Mariana Islands Inset SEC"
+  ],
+  "note": "Shipped inside the Hawaiian Islands zip as its own georeferenced scan."
+ },
+ "samoa": {
+  "grid": [
+   -173,
+   -16,
+   -168,
+   -12
+  ],
+  "charts": [
+   "Hawaiian_Islands::Samoan Islands Inset SEC"
+  ],
+  "note": "Shipped inside the Hawaiian Islands zip as its own georeferenced scan."
+ },
+ "aleutians_far": {
+  "grid": [
+   -180,
+   50,
+   -171,
+   54
+  ],
+  "charts": [
+   "Western_Aleutian_Islands::Western Aleutian Islands East SEC"
+  ],
+  "windows": {
+   "Western_Aleutian_Islands::Western Aleutian Islands East SEC": [
+    -180.0,
+    50.7,
+    -172.3,
+    53.35
+   ]
+  },
+  "note": "The Western Aleutians East scan west of the antimeridian: Adak (PADK), Atka."
+ }
 }
