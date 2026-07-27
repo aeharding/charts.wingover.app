@@ -1,2 +1,6 @@
 Hawaiian_Islands::Hawaiian Islands SEC
-Hawaiian_Islands::Honolulu Inset SEC
+# Honolulu Inset SEC: 1:250k blow-up of Oahu, 100% inside the main
+# sheet. Blended into one pyramid it draws Oahu at 2x the surrounding
+# scale with a hard step at its edge, and its printed projection
+# caption lands in the Pacific. Belongs as a zoom-dependent overlay,
+# like the Puerto Rico-VI TAC. See scripts/audit-units.py.

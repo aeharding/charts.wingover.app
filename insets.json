@@ -1,64 +1,78 @@
 [
-  {
-    "sheet": "Los_Angeles",
-    "seed": [
-      -121.0,
-      32.8
-    ],
-    "note": "LOS ANGELES BASIN inset mini-map over the Pacific"
-  },
-  {
-    "sheet": "New_Orleans",
-    "seed": [
-      -86.45,
-      29.0
-    ],
-    "note": "Eglin/Valparaiso FAR 93 rule diagram over the Gulf"
-  },
-  {
-    "sheet": "Jacksonville",
-    "seed": [
-      -84.1,
-      28.7
-    ],
-    "note": "Tampa-area inset mini-map over the Gulf"
-  },
-  {
-    "sheet": "Jacksonville",
-    "seed": [
-      -79.2,
-      31.5
-    ],
-    "note": "Charleston inset mini-map over the Atlantic"
-  },
-  {
-    "sheet": "Washington",
-    "seed": [
-      -72.45,
-      37.54
-    ],
-    "note": "Norfolk inset mini-map over the Atlantic (explicit box: interior too rectangle-dense for auto-detection; seed kept for future attempts)",
-    "box": [
-      -73.11,
-      36.73,
-      -71.78,
-      37.8
-    ]
-  },
-  {
-    "sheet": "Ketchikan",
-    "seed": [
-      -136.0,
-      55.2
-    ],
-    "note": "Ketchikan 1:250,000 inset over the Pacific; the frame detector misses it (0 frames found)"
-  },
-  {
-    "sheet": "Dutch_Harbor",
-    "seed": [
-      -169.6,
-      55.4
-    ],
-    "note": "Second Dutch Harbor inset over the Bering Sea, west of the one the frame detector finds"
-  }
+ {
+  "sheet": "Los_Angeles",
+  "seed": [
+   -121.0,
+   32.8
+  ],
+  "note": "LOS ANGELES BASIN inset mini-map over the Pacific"
+ },
+ {
+  "sheet": "New_Orleans",
+  "seed": [
+   -86.45,
+   29.0
+  ],
+  "note": "Eglin/Valparaiso FAR 93 rule diagram over the Gulf"
+ },
+ {
+  "sheet": "Jacksonville",
+  "seed": [
+   -84.1,
+   28.7
+  ],
+  "note": "Tampa-area inset mini-map over the Gulf"
+ },
+ {
+  "sheet": "Jacksonville",
+  "seed": [
+   -79.2,
+   31.5
+  ],
+  "note": "Charleston inset mini-map over the Atlantic"
+ },
+ {
+  "sheet": "Washington",
+  "seed": [
+   -72.45,
+   37.54
+  ],
+  "note": "Norfolk inset mini-map over the Atlantic (explicit box: interior too rectangle-dense for auto-detection; seed kept for future attempts)",
+  "box": [
+   -73.11,
+   36.73,
+   -71.78,
+   37.8
+  ]
+ },
+ {
+  "sheet": "Ketchikan",
+  "seed": [
+   -136.0,
+   55.2
+  ],
+  "note": "Ketchikan 1:250,000 inset over the Pacific; the frame detector misses it (0 frames found)"
+ },
+ {
+  "sheet": "Dutch_Harbor",
+  "seed": [
+   -169.6,
+   55.4
+  ],
+  "note": "Second Dutch Harbor inset over the Bering Sea, west of the one the frame detector finds"
+ },
+ {
+  "sheet": "San_Francisco",
+  "seed": [
+   -124.75,
+   37.38
+  ],
+  "box": [
+   -125.0,
+   37.05,
+   -124.5,
+   37.7
+  ],
+  "note": "Legend block over the Pacific: projection caption, datum, elevation conversion scale and terrain tint ramp. Explicit box: the ramp is coloured, so a whiteness detector does not see it."
+ }
 ]
