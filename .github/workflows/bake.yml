@@ -270,25 +270,32 @@ jobs:
           BX0: ${{ matrix.band.x0 }}
           BX1: ${{ matrix.band.x1 }}
           RUN_ID: ${{ github.run_id }}
+          REGION: ${{ inputs.region }}
         run: |
           export AWS_S3_ENDPOINT="$(echo "${{ secrets.R2_ENDPOINT }}" | sed 's|https://||')"
           command -v aws >/dev/null || { apt-get update -qq >/dev/null && apt-get install -y -qq awscli >/dev/null; }
           # Which sheets intersect this band? Header reads only.
           python3 - > fetch.txt <<'EOF'
           import os
+          import sys
+
+          sys.path.insert(0, "scripts")
           from osgeo import gdal
+
+          import units
+
           gdal.UseExceptions()
           x0, x1 = float(os.environ["BX0"]), float(os.environ["BX1"])
-          charts = [
-              line.strip()
-              for line in open("charts-${{ inputs.region }}.txt")
-              if line.strip() and not line.startswith("#")
-          ]
-          for c in charts:
-              uri = f"/vsis3/{os.environ['BUCKET']}/scratch/{os.environ['RUN_ID']}/warped/{c}.tif"
+          # UNIT IDS, not raw entries: warp uploads as "$UNIT.tif" with
+          # spaces and :: sanitised, so building paths from chart lines
+          # 404s for every multi-scan sheet (Hawaii, Marianas, Samoa,
+          # both Aleutian halves).
+          for entry in units.read_list(os.environ["REGION"]):
+              uid = units.unit_id(entry)
+              uri = f"/vsis3/{os.environ['BUCKET']}/scratch/{os.environ['RUN_ID']}/warped/{uid}.tif"
               cc = gdal.Info(uri, format="json")["cornerCoordinates"]
               if cc["lowerRight"][0] > x0 and cc["upperLeft"][0] < x1:
-                  print(c)
+                  print(uid)
           EOF
           echo "band sheets: $(tr '\n' ' ' < fetch.txt)"
           # Localize the inputs: aws cp retries properly, and the encode
