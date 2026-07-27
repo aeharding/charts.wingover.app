@@ -59,8 +59,11 @@ def regions_for(region):
     return sorted(names, key=lambda r: (cfg[r].get("priority", 10), r))
 
 
+ALLOW_MISSING = os.environ.get("BANDSEL_ALLOW_MISSING") == "1"
+
+
 def main(region, x0, x1, template):
-    sel, ys = [], []
+    sel, ys, skipped = [], [], []
     for r in regions_for(region):
         for entry in units.read_list(r):
             # UNIT IDS, not raw entries: warp writes "$UNIT.tif" with
@@ -68,13 +71,27 @@ def main(region, x0, x1, template):
             # 404 for every multi-scan sheet.
             uid = units.unit_id(entry)
             uri = template.format(region=r, uid=uid, suffix="")
-            cc = gdal.Info(uri, format="json")["cornerCoordinates"]
+            try:
+                cc = gdal.Info(uri, format="json")["cornerCoordinates"]
+            except RuntimeError:
+                # STRICT by default. In the bake every unit is warped
+                # before tiling (tile needs prepare), so a missing one
+                # means a sheet would silently vanish from the product -
+                # exactly the failure that shipped a bake of 56 tiles and
+                # called it success. Only the local dry run, which
+                # prepares a subset on purpose, opts out.
+                if not ALLOW_MISSING:
+                    raise
+                skipped.append(f"{r}/{uid}")
+                continue
             if (
                 cc["lowerRight"][0] > x0 - MARGIN
                 and cc["upperLeft"][0] < x1 + MARGIN
             ):
                 sel.append((r, uid))
                 ys += [cc["lowerRight"][1], cc["upperLeft"][1]]
+    if skipped:
+        print(f"SKIPPED {len(skipped)} unwarped units: {skipped[:4]}", file=sys.stderr)
     if not sel:
         raise SystemExit(f"no sheets intersect band {x0}..{x1}")
 

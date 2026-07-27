@@ -16,6 +16,10 @@
 #   REGIONS=samoa BANDS_FOR=samoa bash scripts/tile-dryrun.sh
 #   REGIONS="conus caribbean" BANDS_FOR=all bash scripts/tile-dryrun.sh
 set -euo pipefail
+# This script prepares only the regions asked for, so units of the OTHER
+# regions are legitimately absent. The bake never sets this: there, a
+# missing warp means a sheet would silently vanish from the product.
+export BANDSEL_ALLOW_MISSING=1
 REGIONS="${REGIONS:-${REGION:-samoa}}"
 BANDS_FOR="${BANDS_FOR:-${REGION:-samoa}}"
 OUT=/repo/data/dryrun
