@@ -3,7 +3,7 @@
     "Anchorage": 47.459957,
     "Bethel": 55.187609,
     "Cape_Lisburne": 65.760766,
-    "Cold_Bay": 22.541223,
+    "Cold_Bay": 22.356142,
     "Dawson": 57.677067,
     "Dutch_Harbor": 35.349452,
     "Fairbanks": 57.697557,
@@ -11,7 +11,7 @@
     "Ketchikan": 37.324158,
     "Kodiak": 43.928418,
     "McGrath": 48.818133,
-    "Nome": 57.332462,
+    "Nome": 57.272799,
     "Point_Barrow": 71.548236,
     "Seward": 27.212689
   },
@@ -24,7 +24,7 @@
   },
   "caribbean": {
     "Caribbean_1_VFR": 151.313103,
-    "Caribbean_2_VFR": 104.381193
+    "Caribbean_2_VFR": 104.156319
   },
   "conus": {
     "Albuquerque": 30.261793,
@@ -33,7 +33,7 @@
     "Brownsville": 27.024214,
     "Charlotte": 29.947032,
     "Cheyenne": 37.476584,
-    "Chicago": 35.765187,
+    "Chicago": 34.981309,
     "Cincinnati": 30.546373,
     "Dallas-Ft_Worth": 30.248474,
     "Denver": 32.079764,
@@ -41,10 +41,10 @@
     "El_Paso": 27.564009,
     "Great_Falls": 39.060866,
     "Green_Bay": 37.166187,
-    "Halifax": 35.396704,
-    "Houston": 27.656155,
+    "Halifax": 35.286044,
+    "Houston": 27.539662,
     "Jacksonville": 24.687819,
-    "Kansas_City": 30.511683,
+    "Kansas_City": 30.470779,
     "Klamath_Falls": 37.471567,
     "Lake_Huron": 36.04696,
     "Las_Vegas": 32.048388,
@@ -57,13 +57,13 @@
     "Omaha": 37.466126,
     "Phoenix": 31.556784,
     "Salt_Lake_City": 37.408767,
-    "San_Antonio": 28.001064,
+    "San_Antonio": 27.967815,
     "San_Francisco": 30.364407,
     "Seattle": 39.138248,
-    "St_Louis": 31.913595,
+    "St_Louis": 30.765526,
     "Twin_Cities": 39.193814,
-    "Washington": 29.381198,
-    "Wichita": 30.84889
+    "Washington": 29.358922,
+    "Wichita": 30.84639
   },
   "hawaii": {
     "Hawaiian_Islands::Hawaiian Islands SEC": 13.610712
