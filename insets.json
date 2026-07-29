@@ -550,5 +550,33 @@
    22.753
   ],
   "note": "NW-corner FAA logo and margin caption artwork"
+ },
+ {
+  "sheet": "St_Louis",
+  "seed": [
+   -91.55,
+   36.11
+  ],
+  "box": [
+   -92.115,
+   35.56,
+   -91.002,
+   36.662
+  ],
+  "note": "INDIANAPOLIS Class C inset (1:250k) printed in the SW margin corner. Geographically it lands over northern Arkansas, where Kansas City and Memphis chart the real ground, and St_Louis draws after both - so downtown Indianapolis was served at CVK, 430 km away. Invisible to the exposed-only sweep because neighbours cover that ground."
+ },
+ {
+  "sheet": "San_Antonio",
+  "seed": [
+   -103.042,
+   31.557
+  ],
+  "box": [
+   -103.085,
+   31.495,
+   -102.999,
+   31.62
+  ],
+  "note": "White margin gap inside the body cutline just west of the -103 neatline; drawn after El_Paso it painted a blank rectangle over El Paso's chart west of Roy Hurd Meml. El Paso body + overedge re-cover the whole box."
  }
 ]
