@@ -117,10 +117,16 @@ def main(regions):
                 continue
             pairs += 1
             x0, x1, y0, y1 = inter.GetEnvelope()
-            # keep pixels square even when capped, so blob areas stay true
-            wpx, hpx = max(64, int((x1 - x0) / RES)), max(64, int((y1 - y0) / RES))
-            scale = min(1.0, MAX_PX / max(wpx, hpx))
-            w, h = max(64, int(wpx * scale)), max(64, int(hpx * scale))
+            # Pixels MUST stay square: blobs() converts px to degrees with
+            # one factor for both axes. The old max(64,...) floor on h
+            # stretched thin-strip overlaps (Cape Lisburne x Nome came out
+            # 2.02x tall), so reported latitudes were wrong and one box
+            # landed 0.2 deg outside the sheet entirely.
+            wpx = max(64, int((x1 - x0) / RES))
+            scale = min(1.0, MAX_PX / wpx)
+            w = int(wpx * scale)
+            rx = (x1 - x0) / w
+            h = max(8, round((y1 - y0) / rx))
             try:
                 a = warp(ea, ra, (x0, y0, x1, y1), w, h)
                 b = warp(eb, rb, (x0, y0, x1, y1), w, h)
@@ -131,7 +137,6 @@ def main(regions):
             if both.sum() < 100:
                 continue
             diff = np.abs(a[:3] - b[:3]).mean(axis=0)
-            rx = (x1 - x0) / w  # actual deg/px (RES unless capped)
             mask = both & (diff > DIFF)
             hits = blobs(mask, x0, y1, rx)
             print(f"  [{pairs:3d}] {ea} x {eb}: {len(hits)} blob(s)", flush=True)

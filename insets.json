@@ -578,5 +578,75 @@
    31.62
   ],
   "note": "White margin gap inside the body cutline just west of the -103 neatline; drawn after El_Paso it painted a blank rectangle over El Paso's chart west of Roy Hurd Meml. El Paso body + overedge re-cover the whole box."
+ },
+ {
+  "sheet": "Nome",
+  "seed": [
+   -169.76,
+   68.185
+  ],
+  "box": [
+   -170.45,
+   68.155,
+   -169.07,
+   68.215
+  ],
+  "note": "Residual top frame line and 1:500,000 caption of the Chukotka inset, above the existing chop whose top edge was ~0.04 deg short. Tilted frame means the box takes a wedge of Nome's open-water face; Cape_Lisburne re-covers it."
+ },
+ {
+  "sheet": "Cold_Bay",
+  "seed": [
+   -163.595,
+   53.996
+  ],
+  "box": [
+   -163.995,
+   53.88,
+   -163.195,
+   54.112
+  ],
+  "note": "Bottom-margin caution stack over the Pacific: VFR-purposes caution, UAS caution, weathercams strip. Dutch_Harbor re-covers west of -163.5; the rest becomes no-data over open ocean, same trade as the Seward and Bethel legend bands."
+ },
+ {
+  "sheet": "Caribbean_2_VFR",
+  "seed": [
+   -73.8,
+   19.53
+  ],
+  "box": [
+   -74.37,
+   19.33,
+   -73.43,
+   19.72
+  ],
+  "note": "FAA logo banner in the scan margin (main block plus detached fragment); ships today over Caribbean_1's water since Caribbean_2 draws later."
+ },
+ {
+  "sheet": "Caribbean_2_VFR",
+  "seed": [
+   -73.22,
+   19.95
+  ],
+  "box": [
+   -73.27,
+   19.7,
+   -73.162,
+   20.24
+  ],
+  "note": "Blank printed margin strip with the 20 deg graticule label, west of the neatline; ships today over Caribbean_1's Haiti terrain."
+ },
+ {
+  "sheet": "Kansas_City",
+  "seed": [
+   -97.31,
+   38.9
+  ],
+  "box": [
+   -97.46,
+   38.8,
+   -97.16,
+   39.0
+  ],
+  "note": "FAA logo banner floating in no-data west of the chart body; masked today by Wichita drawing later."
  }
 ]
