@@ -64,7 +64,7 @@ def warp(entry, region, box, w, h):
     return ds.ReadAsArray().astype(np.float32)
 
 
-def blobs(mask, x0, y1):
+def blobs(mask, x0, y1, res):
     """Connected disagreement regions as (area, bbox) via flood fill
     (same approach as derive.py; the container has no scipy)."""
     seen = np.zeros_like(mask, dtype=bool)
@@ -88,13 +88,13 @@ def blobs(mask, x0, y1):
                     if 0 <= yy < rows and 0 <= xx < cols and mask[yy, xx] and not seen[yy, xx]:
                         seen[yy, xx] = True
                         stack.append((yy, xx))
-            area = n * RES * RES
-            w = (maxc - minc + 1) * RES
-            h = (maxr - minr + 1) * RES
+            area = n * res * res
+            w = (maxc - minc + 1) * res
+            h = (maxr - minr + 1) * res
             if area >= MIN_DEG2 and min(w, h) >= MIN_DIM:
                 out.append((area,
-                            (x0 + minc * RES, y1 - (maxr + 1) * RES,
-                             x0 + (maxc + 1) * RES, y1 - minr * RES)))
+                            (x0 + minc * res, y1 - (maxr + 1) * res,
+                             x0 + (maxc + 1) * res, y1 - minr * res)))
     return out
 
 
@@ -133,13 +133,10 @@ def main(regions):
             diff = np.abs(a[:3] - b[:3]).mean(axis=0)
             rx = (x1 - x0) / w  # actual deg/px (RES unless capped)
             mask = both & (diff > DIFF)
-            # rescale blob thresholds if the warp was capped
-            global RES
-            saved = RES
-            RES = rx
-            for area, bx in blobs(mask, x0, y1):
+            hits = blobs(mask, x0, y1, rx)
+            print(f"  [{pairs:3d}] {ea} x {eb}: {len(hits)} blob(s)", flush=True)
+            for area, bx in hits:
                 findings.append((area, ra, ea, rb, eb, bx))
-            RES = saved
 
     findings.sort(reverse=True)
     print(f"\n{pairs} overlapping pairs compared")
