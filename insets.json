@@ -648,5 +648,117 @@
    39.0
   ],
   "note": "FAA logo banner floating in no-data west of the chart body; masked today by Wichita drawing later."
+ },
+ {
+  "sheet": "Chicago",
+  "seed": [
+   -93.35,
+   41.55
+  ],
+  "box": [
+   -93.67,
+   41.01,
+   -93.0,
+   42.09
+  ],
+  "note": "MILWAUKEE 1:250,000 inset panel plus the blank margin to the 93W neatline, printed in the west collar and landing over Des Moines, Iowa; masked today only by Omaha drawing later"
+ },
+ {
+  "sheet": "Chicago",
+  "seed": [
+   -93.04,
+   43.54
+  ],
+  "box": [
+   -93.085,
+   43.078,
+   -93.0,
+   43.995
+  ],
+  "note": "Blank printed west margin west of the 93W neatline: latitude tick labels and graduated border"
+ },
+ {
+  "sheet": "San_Antonio",
+  "seed": [
+   -103.33,
+   30.9
+  ],
+  "box": [
+   -103.42,
+   30.828,
+   -103.246,
+   30.973
+  ],
+  "note": "Second FAA logo banner on a cutline protrusion west of the neatline; ships today over live chart near Fort Stockton (San Antonio draws after El Paso)"
+ },
+ {
+  "sheet": "Houston",
+  "seed": [
+   -97.04,
+   31.53
+  ],
+  "box": [
+   -97.085,
+   30.828,
+   -97.0,
+   32.24
+  ],
+  "note": "Blank printed west margin west of the 97W neatline (Joins San Antonio label, ticks); the north half ships today as a white gash over Dallas-Ft Worth's chart"
+ },
+ {
+  "sheet": "Wichita",
+  "seed": [
+   -104.375,
+   38.89
+  ],
+  "box": [
+   -104.421,
+   38.82,
+   -104.329,
+   38.91
+  ],
+  "note": "FAA logo banner fragment on a cutline protrusion; ships today over Colorado Springs East (Wichita draws after Denver)"
+ },
+ {
+  "sheet": "Washington",
+  "seed": [
+   -79.458,
+   38.888
+  ],
+  "box": [
+   -79.503,
+   38.83,
+   -79.414,
+   38.944
+  ],
+  "note": "FAA seal banner on a cutline protrusion; ships today over the Dolly Sods area, WV (Washington draws after Cincinnati)"
+ },
+ {
+  "sheet": "Washington",
+  "seed": [
+   -79.04,
+   38.91
+  ],
+  "box": [
+   -79.085,
+   38.83,
+   -79.0,
+   38.992
+  ],
+  "note": "Blank printed west margin west of the 79W neatline; ships today as a white rectangle over the Petersburg/Moorefield WV chart"
+ },
+ {
+  "sheet": "Halifax",
+  "seed": [
+   -69.04,
+   47.5
+  ],
+  "box": [
+   -69.085,
+   46.83,
+   -69.0,
+   48.165
+  ],
+  "note": "Blank printed west margin west of the 69W neatline (Joins Montreal label, sheet-index banner corner); masked today by Montreal drawing later"
  }
 ]
