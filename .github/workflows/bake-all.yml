@@ -63,3 +63,23 @@ jobs:
       prefix: ${{ inputs.prefix }}
       dry_run: ${{ inputs.dry_run }}
     secrets: inherit
+
+  # The manifest is the app's only pointer at prefixes. Publishing it is
+  # gated on the WHOLE bake including verify (tile.yml's verify job counts
+  # real objects and head-checks every sentinel city): a bake that is not
+  # proven in the bucket never becomes the product. Pre-effective cycles
+  # land as "next"; publish-manifest sorts that out from the cycle date.
+  publish:
+    needs: tile
+    if: ${{ success() && inputs.dry_run != true }}
+    runs-on: ubuntu-latest
+    env:
+      BUCKET: wingover-charts
+    steps:
+      - uses: actions/checkout@v7
+      - name: Point latest.json at the verified prefix
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: python3 scripts/publish-manifest.py publish "${{ inputs.cycle }}" "${{ inputs.prefix }}"

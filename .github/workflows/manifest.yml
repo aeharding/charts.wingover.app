@@ -1,0 +1,44 @@
+# vfr/latest.json upkeep.
+#
+# promote (cron): rotate next -> current once its effective moment
+# (0901Z on the FAA effective date) has passed. Runs shortly after
+# 0901Z daily; clients also switch by clock, so this only protects
+# clients that read nothing but "current".
+#
+# publish (dispatch): point the manifest at a freshly verified prefix.
+# bake-all does this automatically after verify; the manual path exists
+# for bootstrap and repair.
+name: manifest
+on:
+  schedule:
+    - cron: "6 9 * * *"
+  workflow_dispatch:
+    inputs:
+      cycle:
+        description: Cycle (MM-DD-YYYY) to publish; empty = promote only
+        default: ""
+      prefix:
+        description: Verified release prefix under /vfr/ (e.g. 07-09-2026k)
+        default: ""
+
+env:
+  BUCKET: wingover-charts
+
+jobs:
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Publish or promote
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          cycle="${{ inputs.cycle }}"
+          prefix="${{ inputs.prefix }}"
+          if [ -n "$cycle" ] && [ -n "$prefix" ]; then
+            python3 scripts/publish-manifest.py publish "$cycle" "$prefix"
+          else
+            python3 scripts/publish-manifest.py promote
+          fi

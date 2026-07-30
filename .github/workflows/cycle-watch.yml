@@ -1,0 +1,73 @@
+# Daily watch for a new FAA cycle. Files appear ~20 days before the
+# effective date; baking immediately gives a ~3-week audit window while
+# pilots still see the current cycle (the bake lands as "next" in
+# latest.json and nobody serves it until its effective moment).
+#
+# Cron only ever bakes a cycle the manifest has never heard of, with the
+# next free letter suffix. Re-bakes of a known cycle stay human.
+#
+# Failure mode is LOUD by design: if the new cycle's sheet list changed
+# (FAA adds/renames/retires sheets), the sheet-list gate fails the bake
+# and this fires again tomorrow - the repeated red runs are the
+# notification that charts-<region>.txt needs a human.
+name: cycle-watch
+on:
+  schedule:
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency: cycle-watch
+
+env:
+  BUCKET: wingover-charts
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Is there an unbaked cycle with published files?
+        id: w
+        run: python3 scripts/cycle-watch.py
+      - name: Skip if a bake is already running
+        if: steps.w.outputs.cycle != ''
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          busy=$(gh run list --workflow bake-all.yml \
+            --status in_progress --json databaseId --jq 'length')
+          queued=$(gh run list --workflow bake-all.yml \
+            --status queued --json databaseId --jq 'length')
+          echo "busy=$((busy + queued))" >> "$GITHUB_OUTPUT"
+          [ "$((busy + queued))" -gt 0 ] && echo "a bake is in flight; not dispatching" || true
+      - name: Next free letter for this cycle
+        if: steps.w.outputs.cycle != '' && steps.guard.outputs.busy == '0'
+        id: letter
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          cycle="${{ steps.w.outputs.cycle }}"
+          used=$(aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 ls "s3://$BUCKET/vfr/" \
+            | grep -oE "PRE ${cycle}[a-z]/" | grep -oE "[a-z]/$" | tr -d "/" | sort | tail -1 || true)
+          if [ -z "$used" ]; then next=a; else
+            next=$(printf "%s" "$used" | tr "a-y" "b-z")
+            [ "$used" = "z" ] && { echo "letter space exhausted for $cycle" >&2; exit 1; }
+          fi
+          echo "prefix=${cycle}${next}" >> "$GITHUB_OUTPUT"
+          echo "will bake ${cycle}${next}"
+      - name: Dispatch the bake
+        if: steps.w.outputs.cycle != '' && steps.guard.outputs.busy == '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run bake-all.yml \
+            -f cycle="${{ steps.w.outputs.cycle }}" \
+            -f prefix="${{ steps.letter.outputs.prefix }}" \
+            -f dry_run=false
+          echo "dispatched bake-all for ${{ steps.letter.outputs.prefix }}"
