@@ -44,7 +44,13 @@ def listing_has_zips(cycle_mmddyyyy, path):
 
 def known_cycles():
     try:
-        doc = json.loads(fetch(MANIFEST))
+        # Cache-bust: cron decisions must never act on an edge-stale
+        # manifest. The v1-era latest.json was uploaded with an immutable
+        # cache-control and sat in Cloudflare's cache masking the real
+        # file; and even at max-age=300, a 5-minute-stale read right
+        # after a bake could double-dispatch a cycle.
+        import time
+        doc = json.loads(fetch(f"{MANIFEST}?t={int(time.time())}"))
     except Exception:
         return set()
     out = set()
